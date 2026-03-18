@@ -34,10 +34,12 @@ PROCESS_UNITS = {
     "문서스캔": {"primary": "권", "secondary": "면"},
     "도면스캔": {"primary": "권", "secondary": "면"},
     "보정": {"primary": "권", "secondary": "면"},
-    "색인": {"primary": "권", "secondary": "면"},
-    "재편철": {"primary": "권호수", "secondary": "건"},
-    "공개구분": {"primary": "권호수", "secondary": "건"},
+    "색인": {"primary": "권", "secondary": "건"},
+    "재편철": {"primary": "권", "secondary": "건"},
+    "공개구분": {"primary": "권", "secondary": "건"},
 }
+
+AUTO_PROCESSES = ["재편철", "공개구분"]
 
 
 # ============================================================
@@ -47,13 +49,17 @@ def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        # 구버전 호환: targets 구조 마이그레이션
+        changed = False
+        if "labels" not in data:
+            data["labels"] = {}
+            changed = True
         if "targets" in data and "분류" in data["targets"]:
-            # 구버전 (공정별 개별 목표) → 신버전 (통합 목표)
             data["targets"] = {
                 "target_kwon": data["project"].get("total_kwon", 12000),
                 "target_myun": data["project"].get("total_myun", 1250000),
             }
+            changed = True
+        if changed:
             save_data(data)
         return data
     return get_default_data()
@@ -78,6 +84,7 @@ def get_default_data():
             "target_myun": 1250000,
         },
         "workers": [],
+        "labels": {},
         "daily_logs": [],
         "sampling_logs": [],
     }
@@ -87,15 +94,55 @@ def get_default_data():
 # 유틸리티
 # ============================================================
 def get_daily_df(data):
-    if not data["daily_logs"]:
+    """labels 데이터 + 레거시 daily_logs에서 일별 DataFrame 생성"""
+    rows = []
+
+    for label_num, label_data in data.get("labels", {}).items():
+        bunryu = label_data.get("분류", {})
+        kwon = bunryu.get("kwon", 1)
+        gun = bunryu.get("gun", 0)
+
+        for proc in PROCESSES:
+            if proc not in label_data:
+                continue
+            entry = label_data[proc]
+            if proc == "분류":
+                p, s = entry.get("kwon", 0), entry.get("gun", 0)
+            elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+                p, s = kwon, entry.get("myun", 0)
+            elif proc == "색인":
+                p, s = kwon, entry.get("gun", 0)
+            else:
+                p, s = kwon, gun
+
+            rows.append({
+                "date": entry.get("date", ""),
+                "worker": entry.get("worker", ""),
+                "process": proc,
+                "primary_qty": p,
+                "secondary_qty": s,
+            })
+
+    for log in data.get("daily_logs", []):
+        if "label" not in log:
+            rows.append({
+                "date": log["date"],
+                "worker": log["worker"],
+                "process": log["process"],
+                "primary_qty": log.get("primary_qty", 0),
+                "secondary_qty": log.get("secondary_qty", 0),
+            })
+
+    if not rows:
         return pd.DataFrame(columns=["date", "worker", "process", "primary_qty", "secondary_qty"])
-    df = pd.DataFrame(data["daily_logs"])
+
+    df = pd.DataFrame(rows)
     df["date"] = pd.to_datetime(df["date"])
     return df
 
 
 def calc_cumulative(df, targets):
-    """공정별 누적 실적 계산 (통합 목표 기준)"""
+    """공정별 누적 실적 계산"""
     target_kwon = targets.get("target_kwon", 0)
     target_myun = targets.get("target_myun", 0)
 
@@ -121,6 +168,17 @@ def calc_cumulative(df, targets):
     return result
 
 
+def get_label_stage(label_data):
+    """레이블의 현재 완료 공정 단계 판별"""
+    last = "미작업"
+    for proc in PROCESSES:
+        if proc in label_data:
+            last = proc
+    if last == "공개구분":
+        return "완료"
+    return last
+
+
 # ============================================================
 # 메인 앱
 # ============================================================
@@ -135,16 +193,18 @@ def main():
 
     page = st.sidebar.radio(
         "메뉴",
-        ["📈 대시보드", "✏️ 일일 실적 입력", "👥 작업자별 현황", "🔍 샘플링 검사", "⚙️ 설정"],
+        ["📈 대시보드", "✏️ 일일 실적 입력", "📋 진행표", "👥 작업자별 현황", "🔍 품질검사", "⚙️ 설정"],
     )
 
     if page == "📈 대시보드":
         page_dashboard(data)
     elif page == "✏️ 일일 실적 입력":
         page_daily_input(data)
+    elif page == "📋 진행표":
+        page_progress(data)
     elif page == "👥 작업자별 현황":
         page_worker_stats(data)
-    elif page == "🔍 샘플링 검사":
+    elif page == "🔍 품질검사":
         page_sampling(data)
     elif page == "⚙️ 설정":
         page_settings(data)
@@ -159,7 +219,6 @@ def page_dashboard(data):
     df = get_daily_df(data)
     cum = calc_cumulative(df, data["targets"])
 
-    # --- 상단 요약 ---
     st.subheader("전체 진행 현황")
 
     rates = [cum[p]["rate_primary"] for p in PROCESSES]
@@ -173,9 +232,7 @@ def page_dashboard(data):
     remain_days = max(0, (end - today).days)
     time_rate = round(elapsed_days / total_days * 100, 1) if total_days > 0 else 0
 
-    # 실적 집계
-    total_cum_kwon = sum(cum[p]["cum_primary"] for p in PROCESSES)
-    total_cum_myun = sum(cum[p]["cum_secondary"] for p in PROCESSES)
+    total_labels = len(data.get("labels", {}))
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
@@ -188,7 +245,7 @@ def page_dashboard(data):
         work_days = df["date"].nunique() if len(df) > 0 else 0
         st.metric("작업일수", f"{work_days}일")
     with col5:
-        st.metric("전체 누적 실적", f"{total_cum_kwon:,}권 / {total_cum_myun:,}면")
+        st.metric("등록 레이블", f"{total_labels:,}건")
 
     if avg_rate < time_rate - 10:
         st.warning(f"⚠️ 공정율({avg_rate:.1f}%)이 기간진행률({time_rate}%)보다 낮습니다. 일정 지연 위험!")
@@ -197,7 +254,6 @@ def page_dashboard(data):
 
     st.divider()
 
-    # --- 공정별 게이지 ---
     st.subheader("공정별 진행률")
 
     cols = st.columns(4)
@@ -235,12 +291,11 @@ def page_dashboard(data):
 
             st.caption(
                 f"실적: {c['cum_primary']:,}{unit_p} / {c['cum_secondary']:,}{unit_s}  \n"
-                f"잔여: {c['remain_primary']:,}{unit_p} / {c['remain_secondary']:,}{unit_s}"
+                f"잔여: {c['remain_primary']:,}{unit_p}"
             )
 
     st.divider()
 
-    # --- 공정별 상세 테이블 ---
     st.subheader("공정별 상세 현황")
 
     table_data = []
@@ -252,7 +307,7 @@ def page_dashboard(data):
             "공정": proc,
             f"목표({unit_p})": f"{c['target_primary']:,}",
             f"실적({unit_p})": f"{c['cum_primary']:,}",
-            f"공정율({unit_p})": f"{c['rate_primary']}%",
+            f"공정율": f"{c['rate_primary']}%",
             f"잔여({unit_p})": f"{c['remain_primary']:,}",
             f"실적({unit_s})": f"{c['cum_secondary']:,}",
         })
@@ -260,7 +315,6 @@ def page_dashboard(data):
 
     st.divider()
 
-    # --- 일별 추이 ---
     if len(df) > 0:
         st.subheader("일별 공정 추이")
 
@@ -310,140 +364,618 @@ def page_dashboard(data):
 def page_daily_input(data):
     st.title("✏️ 일일 실적 입력")
 
+    # 1. 작업자 & 작업일자
     col1, col2 = st.columns(2)
     with col1:
-        input_date = st.date_input("작업일자", value=date.today())
+        workers = data["workers"] if data["workers"] else ["(작업자를 먼저 등록하세요)"]
+        worker = st.selectbox("작업자", workers)
     with col2:
-        worker = st.selectbox("작업자", data["workers"] if data["workers"] else ["(작업자를 먼저 등록하세요)"])
+        input_date = st.date_input("작업일자", value=date.today())
+
+    can_input = data["workers"] and worker != "(작업자를 먼저 등록하세요)"
+    if not can_input:
+        st.warning("⚙️ 설정에서 작업자를 먼저 등록해주세요.")
+        return
 
     st.divider()
 
-    st.subheader("공정별 실적 입력")
-    st.caption("해당 공정의 작업량을 입력하세요. 작업하지 않은 공정은 0으로 두면 됩니다.")
+    # 2. 공정 선택
+    process = st.selectbox("공정", PROCESSES)
+
+    # 3. 입력 영역 (엑셀형 시트)
+    st.subheader(f"{process} 실적 입력")
+
+    if process == "분류":
+        st.caption("레이블, 권, 건을 입력하세요. 비고는 특이사항이 있을 때만 작성합니다.")
+        input_df = st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "권": pd.Series(dtype="int64"),
+                           "건": pd.Series(dtype="int64"), "비고": pd.Series(dtype="str")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "권": st.column_config.NumberColumn("권", min_value=0, default=1, width="small"),
+                "건": st.column_config.NumberColumn("건", min_value=0, default=0, width="small"),
+                "비고": st.column_config.TextColumn("비고", width="large"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+        st.caption("레이블과 면수를 입력하세요.")
+        input_df = st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "면": pd.Series(dtype="int64")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "면": st.column_config.NumberColumn("면", min_value=0, default=0, width="small"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    elif process == "색인":
+        st.caption("레이블과 건수를 입력하세요.")
+        input_df = st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "건": pd.Series(dtype="int64")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "건": st.column_config.NumberColumn("건", min_value=0, default=0, width="small"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    elif process in AUTO_PROCESSES:
+        st.caption("레이블번호만 입력하세요. 분류 데이터에서 권/건이 자동 반영됩니다.")
+        input_df = st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    else:
+        input_df = pd.DataFrame()
+
+    # 4. 유효 데이터 추출 & 저장
+    entries = _extract_entries(data, process, input_df)
+
+    if entries:
+        st.divider()
+
+        # 합계 표시
+        if process == "분류":
+            st.info(f"입력: {len(entries)}건 | 합계: {sum(e['kwon'] for e in entries):,}권 / {sum(e['gun'] for e in entries):,}건")
+        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            st.info(f"입력: {len(entries)}건 | 합계: {sum(e['myun'] for e in entries):,}면")
+        elif process == "색인":
+            st.info(f"입력: {len(entries)}건 | 합계: {sum(e['gun'] for e in entries):,}건")
+        elif process in AUTO_PROCESSES:
+            no_data = [e["label"] for e in entries if e.get("kwon", 0) == 0 and e.get("gun", 0) == 0]
+            msg = f"입력: {len(entries)}건"
+            if no_data:
+                msg += f" | 분류 미완: {len(no_data)}건"
+            st.info(msg)
+
+        if st.button("💾 저장", type="primary", key="save_entries"):
+            _save_entries(data, worker, input_date.isoformat(), process, entries)
+            save_data(data)
+            st.success(f"✅ {input_date} {worker} - {process} {len(entries)}건 저장 완료!")
+            st.rerun()
+
+    st.divider()
+
+    # 5. 작업자별 작업 이력
+    _render_worker_log(data, worker, process)
+
+    st.divider()
+
+    # 6. 일자별 공정 실적 요약
+    _render_daily_summary(data, input_date)
+
+
+def _render_worker_log(data, worker, process):
+    """선택한 작업자의 해당 공정 작업 이력 (수정/삭제 기능 포함)"""
+    st.subheader(f"{worker} - {process} 작업 이력")
+
+    labels = data.get("labels", {})
+    rows = []
+
+    for label_num, label_data in labels.items():
+        if process not in label_data:
+            continue
+        entry = label_data[process]
+        if entry.get("worker") != worker:
+            continue
+
+        row = {"레이블": label_num, "작업일": entry.get("date", "")}
+
+        if process == "분류":
+            row["권"] = entry.get("kwon", 0)
+            row["건"] = entry.get("gun", 0)
+            row["비고"] = entry.get("note", "")
+        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            row["면"] = entry.get("myun", 0)
+        elif process == "색인":
+            row["건"] = entry.get("gun", 0)
+        elif process in AUTO_PROCESSES:
+            row["권"] = entry.get("kwon", 0)
+            row["건"] = entry.get("gun", 0)
+
+        rows.append(row)
+
+    if not rows:
+        st.caption("아직 작업 이력이 없습니다.")
+        return
+
+    log_df = pd.DataFrame(rows).sort_values("작업일", ascending=False).reset_index(drop=True)
+
+    # 요약
+    if process == "분류":
+        st.caption(f"총 {len(log_df)}건 | {log_df['권'].sum():,}권 / {log_df['건'].sum():,}건")
+    elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+        st.caption(f"총 {len(log_df)}건 | {log_df['면'].sum():,}면")
+    elif process == "색인":
+        st.caption(f"총 {len(log_df)}건 | {log_df['건'].sum():,}건")
+    elif process in AUTO_PROCESSES:
+        st.caption(f"총 {len(log_df)}건")
+
+    # 편집 모드 토글
+    edit_mode = st.toggle("편집 모드", key=f"edit_mode_{process}")
+
+    if not edit_mode:
+        st.dataframe(log_df, use_container_width=True, hide_index=True)
+        return
+
+    # --- 편집 모드 ---
+
+    # 체크박스로 선택
+    select_col = [False] * len(log_df)
+    log_df.insert(0, "선택", select_col)
+
+    edited_df = st.data_editor(
+        log_df,
+        column_config={
+            "선택": st.column_config.CheckboxColumn("선택", width="small"),
+            "레이블": st.column_config.TextColumn("레이블", disabled=True, width="medium"),
+            "작업일": st.column_config.TextColumn("작업일", disabled=True, width="small"),
+        },
+        disabled=["레이블", "작업일"],
+        use_container_width=True,
+        hide_index=True,
+        key=f"edit_log_{process}",
+    )
+
+    selected_labels = edited_df[edited_df["선택"] == True]["레이블"].tolist()
+
+    col_del, col_change, _ = st.columns([1, 2, 3])
+
+    # 선택 삭제
+    with col_del:
+        if selected_labels:
+            if st.button(f"🗑️ {len(selected_labels)}건 삭제", type="primary", key=f"del_{process}"):
+                for lbl in selected_labels:
+                    if lbl in data["labels"] and process in data["labels"][lbl]:
+                        del data["labels"][lbl][process]
+                        # 해당 레이블에 다른 공정 데이터도 없으면 레이블 자체 삭제
+                        remaining = [k for k in data["labels"][lbl] if k in PROCESSES]
+                        if not remaining:
+                            del data["labels"][lbl]
+                save_data(data)
+                st.success(f"✅ {len(selected_labels)}건 삭제 완료!")
+                st.rerun()
+
+    # 작업자 변경
+    with col_change:
+        if selected_labels:
+            other_workers = [w for w in data["workers"] if w != worker]
+            if other_workers:
+                new_worker = st.selectbox(
+                    "작업자 변경",
+                    other_workers,
+                    key=f"change_worker_{process}",
+                    label_visibility="collapsed",
+                    placeholder="변경할 작업자 선택",
+                )
+                if st.button(f"👤 선택 {len(selected_labels)}건 → {new_worker}", key=f"apply_change_{process}"):
+                    for lbl in selected_labels:
+                        if lbl in data["labels"] and process in data["labels"][lbl]:
+                            data["labels"][lbl][process]["worker"] = new_worker
+                    save_data(data)
+                    st.success(f"✅ {len(selected_labels)}건 작업자 → {new_worker} 변경 완료!")
+                    st.rerun()
+
+    if not selected_labels:
+        st.caption("레이블을 선택하면 삭제 또는 작업자 변경이 가능합니다.")
+
+
+def _extract_entries(data, process, input_df):
+    """data_editor에서 유효한 엔트리를 추출"""
+    if input_df is None or len(input_df) == 0:
+        return []
 
     entries = []
-    cols = st.columns(2)
+    seen = set()
 
-    for i, proc in enumerate(PROCESSES):
-        with cols[i % 2]:
-            unit_p = PROCESS_UNITS[proc]["primary"]
-            unit_s = PROCESS_UNITS[proc]["secondary"]
+    for _, row in input_df.iterrows():
+        label = str(row.get("레이블", "")).strip() if pd.notna(row.get("레이블")) else ""
+        if not label or label in seen:
+            continue
+        seen.add(label)
 
-            with st.expander(f"🔸 {proc}", expanded=False):
-                c1, c2 = st.columns(2)
-                with c1:
-                    p_qty = st.number_input(
-                        f"{unit_p}", min_value=0, value=0, key=f"{proc}_p"
-                    )
-                with c2:
-                    s_qty = st.number_input(
-                        f"{unit_s}", min_value=0, value=0, key=f"{proc}_s"
-                    )
-                if p_qty > 0 or s_qty > 0:
-                    entries.append((proc, p_qty, s_qty))
+        if process == "분류":
+            kwon = int(row.get("권", 1)) if pd.notna(row.get("권")) else 1
+            gun = int(row.get("건", 0)) if pd.notna(row.get("건")) else 0
+            entry = {"label": label, "kwon": kwon, "gun": gun}
+            note = str(row.get("비고", "")).strip() if pd.notna(row.get("비고")) else ""
+            if note:
+                entry["note"] = note
+            entries.append(entry)
 
-    st.divider()
+        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            myun = int(row.get("면", 0)) if pd.notna(row.get("면")) else 0
+            entries.append({"label": label, "myun": myun})
 
-    # 입력 미리보기
-    if entries:
-        st.subheader("입력 미리보기")
-        preview = []
-        for proc, p, s in entries:
-            unit_p = PROCESS_UNITS[proc]["primary"]
-            unit_s = PROCESS_UNITS[proc]["secondary"]
-            preview.append({
-                "공정": proc,
-                f"수량1({unit_p})": p,
-                f"수량2({unit_s})": s,
+        elif process == "색인":
+            gun = int(row.get("건", 0)) if pd.notna(row.get("건")) else 0
+            entries.append({"label": label, "gun": gun})
+
+        elif process in AUTO_PROCESSES:
+            info = data.get("labels", {}).get(label, {}).get("분류", {})
+            entries.append({
+                "label": label,
+                "kwon": info.get("kwon", 0),
+                "gun": info.get("gun", 0),
             })
-        st.dataframe(pd.DataFrame(preview), use_container_width=True, hide_index=True)
 
-    can_save = len(entries) > 0 and data["workers"] and worker != "(작업자를 먼저 등록하세요)"
-    if st.button("💾 저장", type="primary", disabled=not can_save):
-        for proc, p_qty, s_qty in entries:
-            data["daily_logs"].append({
-                "date": input_date.isoformat(),
-                "worker": worker,
-                "process": proc,
-                "primary_qty": p_qty,
-                "secondary_qty": s_qty,
-            })
-        save_data(data)
-        st.success(f"✅ {input_date} {worker}님의 실적 {len(entries)}건이 저장되었습니다!")
-        st.rerun()
+    return entries
 
-    st.divider()
 
-    # --- 일자별 공정 실적 요약 (최근 입력 내역 대체) ---
+def _save_entries(data, worker, date_str, process, entries):
+    """레이블 엔트리를 labels 데이터에 저장"""
+    labels = data.setdefault("labels", {})
+
+    for entry in entries:
+        label_num = entry["label"]
+        label = labels.setdefault(label_num, {})
+
+        record = {"date": date_str, "worker": worker}
+
+        if process == "분류":
+            record["kwon"] = entry["kwon"]
+            record["gun"] = entry["gun"]
+            if entry.get("note"):
+                record["note"] = entry["note"]
+        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            record["myun"] = entry["myun"]
+        elif process == "색인":
+            record["gun"] = entry["gun"]
+        elif process in AUTO_PROCESSES:
+            bunryu = label.get("분류", {})
+            record["kwon"] = entry.get("kwon", bunryu.get("kwon", 0))
+            record["gun"] = entry.get("gun", bunryu.get("gun", 0))
+
+        label[process] = record
+
+
+def _render_daily_summary(data, ref_date):
+    """일자별 공정 실적 요약 - 공정별 고유 단위 표시"""
     st.subheader("일자별 공정 실적")
 
-    df = get_daily_df(data)
-    if len(df) > 0:
-        # 날짜 범위 필터
-        col_f1, col_f2 = st.columns(2)
-        with col_f1:
-            view_start = st.date_input(
-                "조회 시작일",
-                value=max(df["date"].min().date(), input_date - timedelta(days=14)),
-                key="view_start",
-            )
-        with col_f2:
-            view_end = st.date_input("조회 종료일", value=input_date, key="view_end")
-
-        filtered = df[(df["date"].dt.date >= view_start) & (df["date"].dt.date <= view_end)]
-
-        if len(filtered) > 0:
-            # 일자별 공정별 피벗 (secondary_qty 기준)
-            pivot = filtered.pivot_table(
-                index=filtered["date"].dt.strftime("%Y-%m-%d"),
-                columns="process",
-                values="secondary_qty",
-                aggfunc="sum",
-                fill_value=0,
-            )
-            # 공정 순서 정렬
-            ordered_cols = [p for p in PROCESSES if p in pivot.columns]
-            pivot = pivot[ordered_cols]
-            pivot["합계"] = pivot.sum(axis=1)
-            pivot.index.name = "날짜"
-
-            st.dataframe(pivot, use_container_width=True)
-
-            # 일자별 차트
-            chart_data = filtered.groupby(
-                [filtered["date"].dt.strftime("%Y-%m-%d"), "process"]
-            )["secondary_qty"].sum().reset_index()
-            chart_data.columns = ["날짜", "공정", "수량"]
-
-            fig = px.bar(
-                chart_data, x="날짜", y="수량",
-                color="공정", color_discrete_map=PROCESS_COLORS,
-                title="일자별 공정 실적",
-                barmode="group",
-            )
-            fig.update_layout(height=350)
-            st.plotly_chart(fig, use_container_width=True)
-
-            # 일자별 작업자별 상세 (접을 수 있게)
-            with st.expander("📋 일자별 작업자별 상세 보기"):
-                detail = filtered.copy()
-                detail["date"] = detail["date"].dt.strftime("%Y-%m-%d")
-                detail_pivot = detail.pivot_table(
-                    index=["date", "worker"],
-                    columns="process",
-                    values="secondary_qty",
-                    aggfunc="sum",
-                    fill_value=0,
-                )
-                ordered_detail = [p for p in PROCESSES if p in detail_pivot.columns]
-                detail_pivot = detail_pivot[ordered_detail]
-                detail_pivot["합계"] = detail_pivot.sum(axis=1)
-                detail_pivot.index.names = ["날짜", "작업자"]
-                st.dataframe(detail_pivot, use_container_width=True)
-        else:
-            st.info("선택 기간에 데이터가 없습니다.")
-    else:
+    labels = data.get("labels", {})
+    if not labels:
         st.info("아직 입력된 실적이 없습니다.")
+        return
+
+    # labels에서 일자별 공정별 실적 집계
+    daily_data = {}  # date -> {col_name: value}
+
+    for label_num, label_data in labels.items():
+        for proc in PROCESSES:
+            if proc not in label_data:
+                continue
+            entry = label_data[proc]
+            d = entry.get("date", "")
+            if not d:
+                continue
+
+            if d not in daily_data:
+                daily_data[d] = {}
+
+            if proc == "분류":
+                daily_data[d]["분류(권)"] = daily_data[d].get("분류(권)", 0) + entry.get("kwon", 0)
+                daily_data[d]["분류(건)"] = daily_data[d].get("분류(건)", 0) + entry.get("gun", 0)
+            elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+                col = f"{proc}(면)"
+                daily_data[d][col] = daily_data[d].get(col, 0) + entry.get("myun", 0)
+            elif proc == "색인":
+                daily_data[d]["색인(건)"] = daily_data[d].get("색인(건)", 0) + entry.get("gun", 0)
+            elif proc in AUTO_PROCESSES:
+                col = f"{proc}(레이블)"
+                daily_data[d][col] = daily_data[d].get(col, 0) + 1
+
+    if not daily_data:
+        st.info("아직 입력된 실적이 없습니다.")
+        return
+
+    # 날짜 필터
+    all_dates = sorted(daily_data.keys())
+    min_date = datetime.strptime(all_dates[0], "%Y-%m-%d").date()
+    max_date = datetime.strptime(all_dates[-1], "%Y-%m-%d").date()
+
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        view_start = st.date_input(
+            "조회 시작일",
+            value=max(min_date, ref_date - timedelta(days=14)),
+            key="view_start",
+        )
+    with col_f2:
+        view_end = st.date_input("조회 종료일", value=ref_date, key="view_end")
+
+    # 필터 적용
+    filtered = {d: v for d, v in daily_data.items()
+                if view_start <= datetime.strptime(d, "%Y-%m-%d").date() <= view_end}
+
+    if not filtered:
+        st.info("선택 기간에 데이터가 없습니다.")
+        return
+
+    # 컬럼 순서 정의
+    col_order = [
+        "분류(권)", "분류(건)",
+        "면표시(면)", "문서스캔(면)", "도면스캔(면)", "보정(면)",
+        "색인(건)",
+        "재편철(레이블)", "공개구분(레이블)",
+    ]
+
+    rows = []
+    for d in sorted(filtered.keys()):
+        row = {"날짜": d}
+        row.update(filtered[d])
+        rows.append(row)
+
+    summary_df = pd.DataFrame(rows).set_index("날짜")
+    # 존재하는 컬럼만 순서대로
+    existing_cols = [c for c in col_order if c in summary_df.columns]
+    summary_df = summary_df[existing_cols].fillna(0).astype(int)
+
+    st.dataframe(summary_df, use_container_width=True)
+
+    # 작업자별 상세
+    with st.expander("📋 작업자별 상세 보기"):
+        worker_data = {}  # (date, worker) -> {col: value}
+
+        for label_num, label_data in labels.items():
+            for proc in PROCESSES:
+                if proc not in label_data:
+                    continue
+                entry = label_data[proc]
+                d = entry.get("date", "")
+                w = entry.get("worker", "")
+                if not d or not w:
+                    continue
+                if not (view_start <= datetime.strptime(d, "%Y-%m-%d").date() <= view_end):
+                    continue
+
+                key = (d, w)
+                if key not in worker_data:
+                    worker_data[key] = {}
+
+                if proc == "분류":
+                    worker_data[key]["분류(권)"] = worker_data[key].get("분류(권)", 0) + entry.get("kwon", 0)
+                    worker_data[key]["분류(건)"] = worker_data[key].get("분류(건)", 0) + entry.get("gun", 0)
+                elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+                    col = f"{proc}(면)"
+                    worker_data[key][col] = worker_data[key].get(col, 0) + entry.get("myun", 0)
+                elif proc == "색인":
+                    worker_data[key]["색인(건)"] = worker_data[key].get("색인(건)", 0) + entry.get("gun", 0)
+                elif proc in AUTO_PROCESSES:
+                    col = f"{proc}(레이블)"
+                    worker_data[key][col] = worker_data[key].get(col, 0) + 1
+
+        if worker_data:
+            w_rows = []
+            for (d, w), vals in sorted(worker_data.items()):
+                row = {"날짜": d, "작업자": w}
+                row.update(vals)
+                w_rows.append(row)
+
+            w_df = pd.DataFrame(w_rows).set_index(["날짜", "작업자"])
+            w_existing = [c for c in col_order if c in w_df.columns]
+            w_df = w_df[w_existing].fillna(0).astype(int)
+            st.dataframe(w_df, use_container_width=True)
+        else:
+            st.info("데이터가 없습니다.")
+
+
+# ============================================================
+# 📋 진행표
+# ============================================================
+def page_progress(data):
+    st.title("📋 진행표")
+
+    labels = data.get("labels", {})
+
+    if not labels:
+        st.info("등록된 레이블이 없습니다. 일일 실적 입력에서 레이블을 등록해주세요.")
+        return
+
+    # --- 상단 요약 ---
+    st.subheader("공정별 완료 현황")
+
+    total_labels = len(labels)
+    stage_counts = {}
+    proc_completion = {proc: 0 for proc in PROCESSES}
+
+    for label_data in labels.values():
+        stage = get_label_stage(label_data)
+        stage_counts[stage] = stage_counts.get(stage, 0) + 1
+        for proc in PROCESSES:
+            if proc in label_data:
+                proc_completion[proc] += 1
+
+    cols = st.columns(4)
+    for i, proc in enumerate(PROCESSES):
+        with cols[i % 4]:
+            cnt = proc_completion[proc]
+            rate = round(cnt / total_labels * 100, 1) if total_labels > 0 else 0
+            st.metric(proc, f"{cnt:,} / {total_labels:,}", f"{rate}%")
+
+    st.divider()
+
+    st.subheader("현재 단계별 분포")
+
+    stage_order = ["미작업"] + PROCESSES[:-1] + ["완료"]
+    stage_data = []
+    for stage in stage_order:
+        cnt = stage_counts.get(stage, 0)
+        if cnt > 0:
+            stage_data.append({"단계": stage, "레이블수": cnt})
+
+    if stage_data:
+        stage_df = pd.DataFrame(stage_data)
+        fig = px.bar(
+            stage_df, x="단계", y="레이블수",
+            color="단계", title="현재 공정 단계별 레이블 수",
+            text="레이블수",
+        )
+        fig.update_layout(height=300, showlegend=False)
+        fig.update_traces(textposition="outside")
+        st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # --- 검색 & 필터 ---
+    st.subheader("레이블 상세")
+
+    col_search, col_filter = st.columns([2, 1])
+    with col_search:
+        search = st.text_input("레이블 검색", placeholder="레이블번호 입력")
+    with col_filter:
+        filter_stage = st.selectbox("현재 단계 필터", ["전체"] + stage_order)
+
+    # --- 진행표 테이블 ---
+    rows = []
+    for label_num in sorted(labels.keys()):
+        label_data = labels[label_num]
+        stage = get_label_stage(label_data)
+
+        if search and search not in label_num:
+            continue
+        if filter_stage != "전체" and stage != filter_stage:
+            continue
+
+        bunryu = label_data.get("분류", {})
+        row = {
+            "레이블": label_num,
+            "권": bunryu.get("kwon", ""),
+            "건": bunryu.get("gun", ""),
+        }
+
+        myun = ""
+        for mp in ["면표시", "문서스캔", "보정"]:
+            if mp in label_data and label_data[mp].get("myun"):
+                myun = label_data[mp]["myun"]
+                break
+        row["면"] = myun
+
+        for proc in PROCESSES:
+            if proc in label_data:
+                d = label_data[proc].get("date", "")
+                if d:
+                    try:
+                        row[proc] = datetime.strptime(d, "%Y-%m-%d").strftime("%m-%d")
+                    except (ValueError, TypeError):
+                        row[proc] = "O"
+                else:
+                    row[proc] = "O"
+            else:
+                row[proc] = "-"
+
+        # 비고
+        note = bunryu.get("note", "")
+        row["비고"] = note if note else ""
+        row["현재단계"] = stage
+        rows.append(row)
+
+    if not rows:
+        st.info("검색 조건에 맞는 레이블이 없습니다.")
+        return
+
+    progress_df = pd.DataFrame(rows)
+
+    page_size = 50
+    total_pages = max(1, (len(rows) - 1) // page_size + 1)
+
+    col_info, col_page = st.columns([3, 1])
+    with col_info:
+        st.caption(f"총 {len(rows):,}건")
+    with col_page:
+        page_num = st.number_input("페이지", min_value=1, max_value=total_pages, value=1, key="progress_page")
+
+    start_idx = (page_num - 1) * page_size
+    end_idx = min(start_idx + page_size, len(rows))
+
+    st.dataframe(
+        progress_df.iloc[start_idx:end_idx],
+        use_container_width=True,
+        hide_index=True,
+        height=min(len(rows[start_idx:end_idx]) * 35 + 38, 800),
+    )
+
+    st.caption(f"페이지 {page_num}/{total_pages} ({start_idx + 1}~{end_idx}건)")
+
+    st.divider()
+
+    # --- 레이블 상세 조회 ---
+    st.subheader("레이블 상세 조회")
+    detail_label = st.text_input("레이블번호 입력", key="detail_label_input")
+
+    if detail_label.strip() and detail_label.strip() in labels:
+        ld = labels[detail_label.strip()]
+        bunryu = ld.get("분류", {})
+
+        st.markdown(f"**레이블: {detail_label.strip()}**")
+        st.markdown(f"- 현재 단계: **{get_label_stage(ld)}**")
+        if bunryu:
+            st.markdown(f"- 권: {bunryu.get('kwon', '-')} / 건: {bunryu.get('gun', '-')}")
+            if bunryu.get("note"):
+                st.markdown(f"- 비고: {bunryu['note']}")
+
+        detail_rows = []
+        for proc in PROCESSES:
+            if proc in ld:
+                entry = ld[proc]
+                qty = ""
+                if proc == "분류":
+                    qty = f"{entry.get('kwon', 0)}권, {entry.get('gun', 0)}건"
+                elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+                    qty = f"{entry.get('myun', 0)}면"
+                elif proc == "색인":
+                    qty = f"{entry.get('gun', 0)}건"
+                elif proc in AUTO_PROCESSES:
+                    qty = f"{entry.get('kwon', 0)}권, {entry.get('gun', 0)}건 (자동)"
+
+                detail_rows.append({
+                    "공정": proc,
+                    "완료일": entry.get("date", "-"),
+                    "작업자": entry.get("worker", "-"),
+                    "작업량": qty,
+                })
+            else:
+                detail_rows.append({
+                    "공정": proc,
+                    "완료일": "-",
+                    "작업자": "-",
+                    "작업량": "-",
+                })
+
+        st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
+
+    elif detail_label.strip():
+        st.warning(f"레이블 '{detail_label.strip()}'을(를) 찾을 수 없습니다.")
 
 
 # ============================================================
@@ -505,13 +1037,13 @@ def page_worker_stats(data):
 
 
 # ============================================================
-# 🔍 샘플링 검사
+# 🔍 품질검사
 # ============================================================
 def page_sampling(data):
-    st.title("🔍 샘플링 검사 관리")
+    st.title("🔍 품질검사")
 
     st.markdown("""
-    품질목표 **99.9%** 달성을 위한 샘플링 검사 도구입니다.
+    품질목표 **99.9%** 달성을 위한 품질검사 도구입니다.
     - 주 단위 전수검사 및 월 단위 샘플링 검사 기록
     - 오류율 자동 계산 및 적합/부적합 판정
     """)
@@ -621,7 +1153,6 @@ def page_settings(data):
 
     tab1, tab2, tab3 = st.tabs(["사업 정보", "작업자 관리", "데이터 관리"])
 
-    # ---- 탭1: 사업 정보 + 통합 목표량 ----
     with tab1:
         st.subheader("사업 기본 정보")
         proj = data["project"]
@@ -643,7 +1174,7 @@ def page_settings(data):
 
         st.divider()
         st.subheader("목표량 설정")
-        st.caption("전체 공정 공통 목표입니다. 건수는 작업 실적에서 자동 집계됩니다.")
+        st.caption("전체 공정 공통 목표입니다.")
 
         col3, col4 = st.columns(2)
         with col3:
@@ -666,14 +1197,12 @@ def page_settings(data):
             save_data(data)
             st.success("저장 완료!")
 
-    # ---- 탭2: 작업자 관리 (전체삭제 + 체크박스 일괄삭제) ----
     with tab2:
         st.subheader("작업자 관리")
 
         if data["workers"]:
             st.markdown(f"현재 등록: **{len(data['workers'])}명**")
 
-            # 전체 삭제 버튼
             col_top1, col_top2 = st.columns([3, 1])
             with col_top2:
                 if st.button("🗑️ 전체 삭제", type="secondary"):
@@ -696,11 +1225,8 @@ def page_settings(data):
 
             st.divider()
 
-            # 체크박스 선택 삭제
             st.markdown("**삭제할 작업자를 선택하세요:**")
             selected_for_delete = []
-
-            # 한 줄에 4명씩 표시
             workers_per_row = 4
             for row_start in range(0, len(data["workers"]), workers_per_row):
                 row_workers = data["workers"][row_start:row_start + workers_per_row]
@@ -722,11 +1248,8 @@ def page_settings(data):
 
         st.divider()
 
-        # 작업자 추가
         st.subheader("작업자 추가")
         new_worker = st.text_input("작업자 이름", placeholder="이름 입력 후 추가 버튼")
-
-        # 여러 명 한번에 추가
         bulk_workers = st.text_area(
             "여러 명 한번에 추가 (쉼표 또는 줄바꿈으로 구분)",
             placeholder="홍길동, 김철수, 이영희\n또는\n홍길동\n김철수\n이영희",
@@ -744,7 +1267,6 @@ def page_settings(data):
                     st.warning(f"{new_worker}님은 이미 등록되어 있습니다.")
         with col_add2:
             if st.button("➕ 일괄 추가") and bulk_workers:
-                # 쉼표 또는 줄바꿈으로 분리
                 names = [n.strip() for n in bulk_workers.replace("\n", ",").split(",") if n.strip()]
                 added = []
                 for n in names:
@@ -758,7 +1280,6 @@ def page_settings(data):
                 else:
                     st.warning("추가할 새 작업자가 없습니다 (이미 등록됨).")
 
-    # ---- 탭3: 데이터 관리 ----
     with tab3:
         st.subheader("데이터 백업 / 복원")
 
@@ -781,17 +1302,22 @@ def page_settings(data):
 
         st.divider()
 
-        # 실적 데이터 초기화
         st.subheader("실적 데이터 초기화")
-        st.caption("사업 설정(사업명, 기간, 목표, 작업자)은 유지하고 실적 로그만 삭제합니다.")
+        st.caption("사업 설정(사업명, 기간, 목표, 작업자)은 유지하고 레이블 및 실적 로그를 삭제합니다.")
         if st.button("🔄 실적 데이터 초기화"):
             st.session_state["confirm_reset_logs"] = True
 
         if st.session_state.get("confirm_reset_logs"):
-            st.warning(f"⚠️ 일일 실적 {len(data['daily_logs'])}건 + 검사 이력 {len(data.get('sampling_logs', []))}건을 모두 삭제합니다.")
+            label_count = len(data.get("labels", {}))
+            log_count = len(data.get("daily_logs", []))
+            sampling_count = len(data.get("sampling_logs", []))
+            st.warning(
+                f"⚠️ 레이블 {label_count}건 + 일일 실적 {log_count}건 + 검사 이력 {sampling_count}건을 모두 삭제합니다."
+            )
             c1, c2 = st.columns(2)
             with c1:
                 if st.button("✅ 예, 초기화", type="primary", key="confirm_reset"):
+                    data["labels"] = {}
                     data["daily_logs"] = []
                     data["sampling_logs"] = []
                     save_data(data)
