@@ -53,6 +53,9 @@ def load_data():
         if "labels" not in data:
             data["labels"] = {}
             changed = True
+        if "label_registry" not in data:
+            data["label_registry"] = {}
+            changed = True
         if "targets" in data and "분류" in data["targets"]:
             data["targets"] = {
                 "target_kwon": data["project"].get("total_kwon", 12000),
@@ -84,6 +87,7 @@ def get_default_data():
             "target_myun": 1250000,
         },
         "workers": [],
+        "label_registry": {},
         "labels": {},
         "daily_logs": [],
         "sampling_logs": [],
@@ -303,6 +307,11 @@ def page_dashboard(data):
                 f"잔여: {c['remain_primary']:,}{unit_p}"
             )
 
+    # 스캔합계 표시
+    scan_total_myun = cum["문서스캔"]["cum_secondary"] + cum["도면스캔"]["cum_secondary"]
+    scan_total_kwon = cum["문서스캔"]["cum_primary"] + cum["도면스캔"]["cum_primary"]
+    st.info(f"📌 **스캔 합계** (문서스캔 + 도면스캔): **{scan_total_kwon:,}권** / **{scan_total_myun:,}면**")
+
     st.divider()
 
     st.subheader("공정별 상세 현황")
@@ -314,12 +323,27 @@ def page_dashboard(data):
         unit_s = PROCESS_UNITS[proc]["secondary"]
         table_data.append({
             "공정": proc,
-            f"목표({unit_p})": f"{c['target_primary']:,}",
-            f"실적({unit_p})": f"{c['cum_primary']:,}",
+            f"목표(권)": f"{c['target_primary']:,}",
+            f"실적(권)": f"{c['cum_primary']:,}",
             f"공정율": f"{c['rate_primary']}%",
-            f"잔여({unit_p})": f"{c['remain_primary']:,}",
+            f"잔여(권)": f"{c['remain_primary']:,}",
             f"실적({unit_s})": f"{c['cum_secondary']:,}",
         })
+        # 도면스캔 다음에 스캔합계 행 추가
+        if proc == "도면스캔":
+            scan_total_p = cum["문서스캔"]["cum_primary"] + cum["도면스캔"]["cum_primary"]
+            scan_total_s = cum["문서스캔"]["cum_secondary"] + cum["도면스캔"]["cum_secondary"]
+            scan_target_p = cum["문서스캔"]["target_primary"]
+            scan_target_s = cum["문서스캔"]["target_secondary"]
+            scan_rate = round(scan_total_p / scan_target_p * 100, 1) if scan_target_p > 0 else 0
+            table_data.append({
+                "공정": "┗ 스캔합계",
+                f"목표(권)": f"{scan_target_p:,}",
+                f"실적(권)": f"{scan_total_p:,}",
+                f"공정율": f"{scan_rate}%",
+                f"잔여(권)": f"{max(0, scan_target_p - scan_total_p):,}",
+                f"실적(면)": f"{scan_total_s:,}",
+            })
     st.dataframe(pd.DataFrame(table_data), use_container_width=True, hide_index=True)
 
     st.divider()
@@ -409,16 +433,80 @@ def page_process_sheet(data, process):
                     msg += f" | 분류 미완: {len(no_data)}건"
                 st.info(msg)
 
-            if st.button("💾 저장", type="primary", key=f"save_{process}"):
-                _save_entries(data, worker, input_date.isoformat(), process, entries)
-                save_data(data)
-                st.success(f"✅ {input_date} {worker} - {process} {len(entries)}건 저장 완료!")
-                st.rerun()
+            # 등록되지 않은 레이블 경고
+            registry = data.get("label_registry", {})
+            unregistered = []
+            if registry:
+                for e in entries:
+                    if e["label"] not in registry:
+                        unregistered.append(e["label"])
+                if unregistered:
+                    st.warning(f"⚠️ 등록되지 않은 레이블: {', '.join(unregistered)} (오타를 확인해주세요)")
+
+            # 중복 레이블 체크
+            existing_labels = data.get("labels", {})
+            duplicates = []
+            for e in entries:
+                lbl = e["label"]
+                if lbl in existing_labels and process in existing_labels[lbl]:
+                    existing_date = existing_labels[lbl][process].get("date", "")
+                    if existing_date:
+                        try:
+                            dt = datetime.strptime(existing_date, "%Y-%m-%d")
+                            date_display = f"{dt.month}월 {dt.day}일"
+                        except (ValueError, TypeError):
+                            date_display = existing_date
+                    else:
+                        date_display = "(날짜 미상)"
+                    duplicates.append((lbl, date_display))
+
+            if duplicates:
+                for lbl, d in duplicates:
+                    st.error(f"⚠️ 레이블 {lbl}은(는) 이미 {d}에 작성되었습니다.")
+
+            # 중복 제외한 신규 엔트리만 저장
+            new_entries = [e for e in entries if e["label"] not in existing_labels or process not in existing_labels.get(e["label"], {})]
+
+            if new_entries:
+                if st.button("💾 저장", type="primary", key=f"save_{process}"):
+                    _save_entries(data, worker, input_date.isoformat(), process, new_entries)
+                    save_data(data)
+                    st.success(f"✅ {input_date} {worker} - {process} {len(new_entries)}건 저장 완료!")
+                    st.rerun()
+            elif not duplicates:
+                st.button("💾 저장", type="primary", key=f"save_{process}", disabled=True)
 
     st.divider()
 
-    # 3. 작업자별 작업 이력 (편집 가능)
-    _render_worker_log(data, worker, process)
+    # 3. 작업 이력 (필터 기능)
+    st.subheader(f"{process} 작업 이력")
+
+    # 필터
+    col_fw, col_fd, col_fb = st.columns([1, 1, 1])
+    with col_fw:
+        all_workers_in_proc = set()
+        for label_data in data.get("labels", {}).values():
+            if process in label_data:
+                w = label_data[process].get("worker", "")
+                if w:
+                    all_workers_in_proc.add(w)
+        worker_options = ["전체"] + sorted(all_workers_in_proc)
+        filter_worker = st.selectbox("작업자 필터", worker_options, key=f"fw_{process}")
+    with col_fd:
+        all_dates_in_proc = set()
+        for label_data in data.get("labels", {}).values():
+            if process in label_data:
+                d = label_data[process].get("date", "")
+                if d:
+                    all_dates_in_proc.add(d)
+        date_options = ["전체"] + sorted(all_dates_in_proc, reverse=True)
+        filter_date = st.selectbox("날짜 필터", date_options, key=f"fd_{process}")
+    with col_fb:
+        registry = data.get("label_registry", {})
+        box_options_proc = sorted(set(info.get("box", "") for info in registry.values() if info.get("box")))
+        filter_box_proc = st.selectbox("상자번호 필터", ["전체"] + box_options_proc, key=f"fb_{process}")
+
+    _render_worker_log_filtered(data, process, filter_worker, filter_date, filter_box_proc)
 
     st.divider()
 
@@ -443,14 +531,46 @@ def _render_input_editor(process):
             key=f"editor_{process}",
             use_container_width=True,
         )
-    elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
-        st.caption("레이블과 면수를 입력하세요.")
+    elif process == "문서스캔":
+        st.caption("레이블과 면수를 입력하세요. 도면이 포함된 문서는 '도면포함'을 선택하세요.")
         return st.data_editor(
-            pd.DataFrame({"레이블": pd.Series(dtype="str"), "면": pd.Series(dtype="int64")}),
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "면": pd.Series(dtype="int64"),
+                           "도면포함": pd.Series(dtype="bool"), "비고": pd.Series(dtype="str")}),
             num_rows="dynamic",
             column_config={
                 "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
                 "면": st.column_config.NumberColumn("면", min_value=0, default=0, width="small"),
+                "도면포함": st.column_config.CheckboxColumn("도면포함", default=False, width="small"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    elif process == "도면스캔":
+        st.caption("레이블과 면수를 입력하세요. 문서스캔 없이 도면만 있는 경우 '전체도면'을 선택하세요.")
+        return st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "면": pd.Series(dtype="int64"),
+                           "전체도면": pd.Series(dtype="bool"), "비고": pd.Series(dtype="str")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "면": st.column_config.NumberColumn("면", min_value=0, default=0, width="small"),
+                "전체도면": st.column_config.CheckboxColumn("전체도면", default=False, width="small"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
+            },
+            key=f"editor_{process}",
+            use_container_width=True,
+        )
+    elif process in ["면표시", "보정"]:
+        st.caption("레이블과 면수를 입력하세요.")
+        return st.data_editor(
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "면": pd.Series(dtype="int64"),
+                           "비고": pd.Series(dtype="str")}),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "면": st.column_config.NumberColumn("면", min_value=0, default=0, width="small"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
             },
             key=f"editor_{process}",
             use_container_width=True,
@@ -458,11 +578,13 @@ def _render_input_editor(process):
     elif process == "색인":
         st.caption("레이블과 건수를 입력하세요.")
         return st.data_editor(
-            pd.DataFrame({"레이블": pd.Series(dtype="str"), "건": pd.Series(dtype="int64")}),
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "건": pd.Series(dtype="int64"),
+                           "비고": pd.Series(dtype="str")}),
             num_rows="dynamic",
             column_config={
                 "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
                 "건": st.column_config.NumberColumn("건", min_value=0, default=0, width="small"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
             },
             key=f"editor_{process}",
             use_container_width=True,
@@ -470,15 +592,214 @@ def _render_input_editor(process):
     elif process in AUTO_PROCESSES:
         st.caption("레이블번호만 입력하세요. 분류 데이터에서 권/건이 자동 반영됩니다.")
         return st.data_editor(
-            pd.DataFrame({"레이블": pd.Series(dtype="str")}),
+            pd.DataFrame({"레이블": pd.Series(dtype="str"), "비고": pd.Series(dtype="str")}),
             num_rows="dynamic",
             column_config={
                 "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "비고": st.column_config.TextColumn("비고", width="medium"),
             },
             key=f"editor_{process}",
             use_container_width=True,
         )
     return pd.DataFrame()
+
+
+def _render_worker_log_filtered(data, process, filter_worker, filter_date, filter_box):
+    """필터가 적용된 작업 이력 (더블클릭으로 직접 수정)"""
+    labels = data.get("labels", {})
+    workers = data.get("workers", [])
+    registry = data.get("label_registry", {})
+    rows = []
+
+    for label_num, label_data in labels.items():
+        if process not in label_data:
+            continue
+        entry = label_data[process]
+        entry_worker = entry.get("worker", "")
+        entry_date = entry.get("date", "")
+        entry_box = registry.get(label_num, {}).get("box", "")
+
+        if filter_worker != "전체" and entry_worker != filter_worker:
+            continue
+        if filter_date != "전체" and entry_date != filter_date:
+            continue
+        if filter_box != "전체" and entry_box != filter_box:
+            continue
+
+        row = {"선택": False, "레이블": label_num, "작업일": entry_date, "작업자": entry_worker}
+
+        if process == "분류":
+            row["권"] = entry.get("kwon", 0)
+            row["건"] = entry.get("gun", 0)
+        elif process == "문서스캔":
+            row["면"] = entry.get("myun", 0)
+            row["도면포함"] = entry.get("domyun_type", "") == "도면포함"
+        elif process == "도면스캔":
+            row["면"] = entry.get("myun", 0)
+            row["전체도면"] = entry.get("domyun_type", "") == "전체도면"
+        elif process in ["면표시", "보정"]:
+            row["면"] = entry.get("myun", 0)
+        elif process == "색인":
+            row["건"] = entry.get("gun", 0)
+        elif process in AUTO_PROCESSES:
+            row["권"] = entry.get("kwon", 0)
+            row["건"] = entry.get("gun", 0)
+
+        row["비고"] = entry.get("note", "")
+        rows.append(row)
+
+    if not rows:
+        st.caption("조건에 맞는 작업 이력이 없습니다.")
+        return
+
+    log_df = pd.DataFrame(rows).sort_values("작업일", ascending=False).reset_index(drop=True)
+
+    # 요약
+    if process == "분류":
+        st.caption(f"총 {len(log_df)}건 | {log_df['권'].sum():,}권 / {log_df['건'].sum():,}건")
+    elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+        st.caption(f"총 {len(log_df)}건 | {log_df['면'].sum():,}면")
+    elif process == "색인":
+        st.caption(f"총 {len(log_df)}건 | {log_df['건'].sum():,}건")
+    elif process in AUTO_PROCESSES:
+        st.caption(f"총 {len(log_df)}건")
+
+    st.caption("💡 셀을 더블클릭하면 직접 수정할 수 있습니다.")
+
+    # 컬럼 설정
+    col_config = {
+        "선택": st.column_config.CheckboxColumn("선택", width="small"),
+        "레이블": st.column_config.TextColumn("레이블", width="medium"),
+        "작업일": st.column_config.TextColumn("작업일", width="small"),
+        "작업자": st.column_config.SelectboxColumn("작업자", options=workers, width="small"),
+    }
+
+    if process == "분류":
+        col_config["권"] = st.column_config.NumberColumn("권", min_value=0, width="small")
+        col_config["건"] = st.column_config.NumberColumn("건", min_value=0, width="small")
+    elif process == "문서스캔":
+        col_config["면"] = st.column_config.NumberColumn("면", min_value=0, width="small")
+        col_config["도면포함"] = st.column_config.CheckboxColumn("도면포함", width="small")
+    elif process == "도면스캔":
+        col_config["면"] = st.column_config.NumberColumn("면", min_value=0, width="small")
+        col_config["전체도면"] = st.column_config.CheckboxColumn("전체도면", width="small")
+    elif process in ["면표시", "보정"]:
+        col_config["면"] = st.column_config.NumberColumn("면", min_value=0, width="small")
+    elif process == "색인":
+        col_config["건"] = st.column_config.NumberColumn("건", min_value=0, width="small")
+    elif process in AUTO_PROCESSES:
+        col_config["권"] = st.column_config.NumberColumn("권", min_value=0, width="small")
+        col_config["건"] = st.column_config.NumberColumn("건", min_value=0, width="small")
+
+    col_config["비고"] = st.column_config.TextColumn("비고", width="medium")
+
+    edited_df = st.data_editor(
+        log_df,
+        column_config=col_config,
+        use_container_width=True,
+        hide_index=True,
+        key=f"edit_log_{process}",
+    )
+
+    # --- 변경사항 저장 ---
+    has_changes = False
+    for i, row in edited_df.iterrows():
+        new_lbl = str(row["레이블"]).strip()
+        orig = log_df.iloc[i] if i < len(log_df) else None
+        if orig is None:
+            continue
+        orig_lbl = orig["레이블"]
+
+        if orig_lbl not in data["labels"] or process not in data["labels"][orig_lbl]:
+            continue
+
+        changed = False
+
+        if new_lbl != orig_lbl and new_lbl:
+            label_data_move = data["labels"].pop(orig_lbl)
+            data["labels"][new_lbl] = label_data_move
+            changed = True
+            current_lbl = new_lbl
+        else:
+            current_lbl = orig_lbl
+
+        entry = data["labels"][current_lbl][process]
+
+        if row["작업일"] != orig["작업일"]:
+            entry["date"] = row["작업일"]
+            changed = True
+        if row["작업자"] != orig["작업자"]:
+            entry["worker"] = row["작업자"]
+            changed = True
+
+        # 비고
+        if row.get("비고", "") != orig.get("비고", ""):
+            entry["note"] = row.get("비고", "")
+            changed = True
+
+        # 수량
+        if process == "분류":
+            if row["권"] != orig["권"]:
+                entry["kwon"] = int(row["권"])
+                changed = True
+            if row["건"] != orig["건"]:
+                entry["gun"] = int(row["건"])
+                changed = True
+        elif process == "문서스캔":
+            if row["면"] != orig["면"]:
+                entry["myun"] = int(row["면"])
+                changed = True
+            new_domyun = "도면포함" if row.get("도면포함", False) else ""
+            orig_domyun = "도면포함" if orig.get("도면포함", False) else ""
+            if new_domyun != orig_domyun:
+                entry["domyun_type"] = new_domyun
+                changed = True
+        elif process == "도면스캔":
+            if row["면"] != orig["면"]:
+                entry["myun"] = int(row["면"])
+                changed = True
+            new_domyun = "전체도면" if row.get("전체도면", False) else ""
+            orig_domyun = "전체도면" if orig.get("전체도면", False) else ""
+            if new_domyun != orig_domyun:
+                entry["domyun_type"] = new_domyun
+                changed = True
+        elif process in ["면표시", "보정"]:
+            if row["면"] != orig["면"]:
+                entry["myun"] = int(row["면"])
+                changed = True
+        elif process == "색인":
+            if row["건"] != orig["건"]:
+                entry["gun"] = int(row["건"])
+                changed = True
+        elif process in AUTO_PROCESSES:
+            if row["권"] != orig["권"]:
+                entry["kwon"] = int(row["권"])
+                changed = True
+            if row["건"] != orig["건"]:
+                entry["gun"] = int(row["건"])
+                changed = True
+
+        if changed:
+            has_changes = True
+
+    if has_changes:
+        save_data(data)
+        st.success("✅ 수정사항이 저장되었습니다.")
+        st.rerun()
+
+    # --- 선택 삭제 ---
+    selected_labels = edited_df[edited_df["선택"] == True]["레이블"].tolist()
+    if selected_labels:
+        if st.button(f"🗑️ 선택 {len(selected_labels)}건 삭제", type="primary", key=f"del_{process}"):
+            for lbl in selected_labels:
+                if lbl in data["labels"] and process in data["labels"][lbl]:
+                    del data["labels"][lbl][process]
+                    remaining = [k for k in data["labels"][lbl] if k in PROCESSES]
+                    if not remaining:
+                        del data["labels"][lbl]
+            save_data(data)
+            st.success(f"✅ {len(selected_labels)}건 삭제 완료!")
+            st.rerun()
 
 
 def _render_process_daily(data, process):
@@ -532,119 +853,6 @@ def _render_process_daily(data, process):
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
-def _render_worker_log(data, worker, process):
-    """선택한 작업자의 해당 공정 작업 이력 (수정/삭제 기능 포함)"""
-    st.subheader(f"{worker} - {process} 작업 이력")
-
-    labels = data.get("labels", {})
-    rows = []
-
-    for label_num, label_data in labels.items():
-        if process not in label_data:
-            continue
-        entry = label_data[process]
-        if entry.get("worker") != worker:
-            continue
-
-        row = {"레이블": label_num, "작업일": entry.get("date", "")}
-
-        if process == "분류":
-            row["권"] = entry.get("kwon", 0)
-            row["건"] = entry.get("gun", 0)
-            row["비고"] = entry.get("note", "")
-        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
-            row["면"] = entry.get("myun", 0)
-        elif process == "색인":
-            row["건"] = entry.get("gun", 0)
-        elif process in AUTO_PROCESSES:
-            row["권"] = entry.get("kwon", 0)
-            row["건"] = entry.get("gun", 0)
-
-        rows.append(row)
-
-    if not rows:
-        st.caption("아직 작업 이력이 없습니다.")
-        return
-
-    log_df = pd.DataFrame(rows).sort_values("작업일", ascending=False).reset_index(drop=True)
-
-    # 요약
-    if process == "분류":
-        st.caption(f"총 {len(log_df)}건 | {log_df['권'].sum():,}권 / {log_df['건'].sum():,}건")
-    elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
-        st.caption(f"총 {len(log_df)}건 | {log_df['면'].sum():,}면")
-    elif process == "색인":
-        st.caption(f"총 {len(log_df)}건 | {log_df['건'].sum():,}건")
-    elif process in AUTO_PROCESSES:
-        st.caption(f"총 {len(log_df)}건")
-
-    # 편집 모드 토글
-    edit_mode = st.toggle("편집 모드", key=f"edit_mode_{process}")
-
-    if not edit_mode:
-        st.dataframe(log_df, use_container_width=True, hide_index=True)
-        return
-
-    # --- 편집 모드 ---
-
-    # 체크박스로 선택
-    select_col = [False] * len(log_df)
-    log_df.insert(0, "선택", select_col)
-
-    edited_df = st.data_editor(
-        log_df,
-        column_config={
-            "선택": st.column_config.CheckboxColumn("선택", width="small"),
-            "레이블": st.column_config.TextColumn("레이블", disabled=True, width="medium"),
-            "작업일": st.column_config.TextColumn("작업일", disabled=True, width="small"),
-        },
-        disabled=["레이블", "작업일"],
-        use_container_width=True,
-        hide_index=True,
-        key=f"edit_log_{process}",
-    )
-
-    selected_labels = edited_df[edited_df["선택"] == True]["레이블"].tolist()
-
-    col_del, col_change, _ = st.columns([1, 2, 3])
-
-    # 선택 삭제
-    with col_del:
-        if selected_labels:
-            if st.button(f"🗑️ {len(selected_labels)}건 삭제", type="primary", key=f"del_{process}"):
-                for lbl in selected_labels:
-                    if lbl in data["labels"] and process in data["labels"][lbl]:
-                        del data["labels"][lbl][process]
-                        # 해당 레이블에 다른 공정 데이터도 없으면 레이블 자체 삭제
-                        remaining = [k for k in data["labels"][lbl] if k in PROCESSES]
-                        if not remaining:
-                            del data["labels"][lbl]
-                save_data(data)
-                st.success(f"✅ {len(selected_labels)}건 삭제 완료!")
-                st.rerun()
-
-    # 작업자 변경
-    with col_change:
-        if selected_labels:
-            other_workers = [w for w in data["workers"] if w != worker]
-            if other_workers:
-                new_worker = st.selectbox(
-                    "작업자 변경",
-                    other_workers,
-                    key=f"change_worker_{process}",
-                    label_visibility="collapsed",
-                    placeholder="변경할 작업자 선택",
-                )
-                if st.button(f"👤 선택 {len(selected_labels)}건 → {new_worker}", key=f"apply_change_{process}"):
-                    for lbl in selected_labels:
-                        if lbl in data["labels"] and process in data["labels"][lbl]:
-                            data["labels"][lbl][process]["worker"] = new_worker
-                    save_data(data)
-                    st.success(f"✅ {len(selected_labels)}건 작업자 → {new_worker} 변경 완료!")
-                    st.rerun()
-
-    if not selected_labels:
-        st.caption("레이블을 선택하면 삭제 또는 작업자 변경이 가능합니다.")
 
 
 def _extract_entries(data, process, input_df):
@@ -661,30 +869,60 @@ def _extract_entries(data, process, input_df):
             continue
         seen.add(label)
 
+        note = str(row.get("비고", "")).strip() if pd.notna(row.get("비고")) else ""
+
         if process == "분류":
             kwon = int(row.get("권", 1)) if pd.notna(row.get("권")) else 1
             gun = int(row.get("건", 0)) if pd.notna(row.get("건")) else 0
             entry = {"label": label, "kwon": kwon, "gun": gun}
-            note = str(row.get("비고", "")).strip() if pd.notna(row.get("비고")) else ""
             if note:
                 entry["note"] = note
             entries.append(entry)
 
-        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+        elif process == "문서스캔":
             myun = int(row.get("면", 0)) if pd.notna(row.get("면")) else 0
-            entries.append({"label": label, "myun": myun})
+            has_domyun = bool(row.get("도면포함", False))
+            entry = {"label": label, "myun": myun}
+            if has_domyun:
+                entry["domyun_type"] = "도면포함"
+            if note:
+                entry["note"] = note
+            entries.append(entry)
+
+        elif process == "도면스캔":
+            myun = int(row.get("면", 0)) if pd.notna(row.get("면")) else 0
+            is_full = bool(row.get("전체도면", False))
+            entry = {"label": label, "myun": myun}
+            if is_full:
+                entry["domyun_type"] = "전체도면"
+            if note:
+                entry["note"] = note
+            entries.append(entry)
+
+        elif process in ["면표시", "보정"]:
+            myun = int(row.get("면", 0)) if pd.notna(row.get("면")) else 0
+            entry = {"label": label, "myun": myun}
+            if note:
+                entry["note"] = note
+            entries.append(entry)
 
         elif process == "색인":
             gun = int(row.get("건", 0)) if pd.notna(row.get("건")) else 0
-            entries.append({"label": label, "gun": gun})
+            entry = {"label": label, "gun": gun}
+            if note:
+                entry["note"] = note
+            entries.append(entry)
 
         elif process in AUTO_PROCESSES:
             info = data.get("labels", {}).get(label, {}).get("분류", {})
-            entries.append({
+            entry = {
                 "label": label,
                 "kwon": info.get("kwon", 0),
                 "gun": info.get("gun", 0),
-            })
+            }
+            if note:
+                entry["note"] = note
+            entries.append(entry)
 
     return entries
 
@@ -699,12 +937,21 @@ def _save_entries(data, worker, date_str, process, entries):
 
         record = {"date": date_str, "worker": worker}
 
+        if entry.get("note"):
+            record["note"] = entry["note"]
+
         if process == "분류":
             record["kwon"] = entry["kwon"]
             record["gun"] = entry["gun"]
-            if entry.get("note"):
-                record["note"] = entry["note"]
-        elif process in ["면표시", "문서스캔", "도면스캔", "보정"]:
+        elif process == "문서스캔":
+            record["myun"] = entry["myun"]
+            if entry.get("domyun_type"):
+                record["domyun_type"] = entry["domyun_type"]
+        elif process == "도면스캔":
+            record["myun"] = entry["myun"]
+            if entry.get("domyun_type"):
+                record["domyun_type"] = entry["domyun_type"]
+        elif process in ["면표시", "보정"]:
             record["myun"] = entry["myun"]
         elif process == "색인":
             record["gun"] = entry["gun"]
@@ -723,19 +970,24 @@ def page_progress(data):
     st.title("📋 공정진행표")
 
     labels = data.get("labels", {})
+    registry = data.get("label_registry", {})
 
-    if not labels:
-        st.info("등록된 레이블이 없습니다. 좌측 공정별 시트에서 레이블을 등록해주세요.")
+    # 등록된 레이블 + 실적이 있는 레이블 합집합
+    all_label_nums = sorted(set(list(registry.keys()) + list(labels.keys())))
+
+    if not all_label_nums:
+        st.info("등록된 레이블이 없습니다. ⚙️ 설정 > 레이블 등록에서 레이블 목록을 업로드하거나, 공정별 시트에서 직접 입력하세요.")
         return
 
     # --- 상단 요약 ---
     st.subheader("공정별 완료 현황")
 
-    total_labels = len(labels)
+    total_labels = len(all_label_nums)
     stage_counts = {}
     proc_completion = {proc: 0 for proc in PROCESSES}
 
-    for label_data in labels.values():
+    for lbl in all_label_nums:
+        label_data = labels.get(lbl, {})
         stage = get_label_stage(label_data)
         stage_counts[stage] = stage_counts.get(stage, 0) + 1
         for proc in PROCESSES:
@@ -776,21 +1028,47 @@ def page_progress(data):
     # --- 검색 & 필터 ---
     st.subheader("레이블 상세")
 
-    col_search, col_filter = st.columns([2, 1])
+    col_search, col_box, col_batch, col_filter, col_domyun = st.columns([2, 1, 1, 1, 1])
     with col_search:
         search = st.text_input("레이블 검색", placeholder="레이블번호 입력")
+    with col_box:
+        box_list = sorted(set(info.get("box", "") for info in registry.values() if info.get("box")))
+        filter_box = st.selectbox("상자번호", ["전체"] + box_list)
+    with col_batch:
+        batch_list = sorted(set(info.get("batch", "") for info in registry.values() if info.get("batch")))
+        filter_batch = st.selectbox("반입회차", ["전체"] + batch_list)
     with col_filter:
-        filter_stage = st.selectbox("현재 단계 필터", ["전체"] + stage_order)
+        filter_stage = st.selectbox("현재 단계", ["전체"] + stage_order)
+    with col_domyun:
+        filter_domyun = st.selectbox("도면유형", ["전체", "도면포함", "전체도면", "도면없음"])
 
     # --- 진행표 테이블 (xlsx 진행표 시트 포맷) ---
     rows = []
-    for label_num in sorted(labels.keys()):
-        label_data = labels[label_num]
+    for label_num in all_label_nums:
+        label_data = labels.get(label_num, {})
         stage = get_label_stage(label_data)
+        reg_info = registry.get(label_num, {})
+        box_num = reg_info.get("box", "")
+        batch_num = reg_info.get("batch", "")
 
         if search and search not in label_num:
             continue
+        if filter_box != "전체" and box_num != filter_box:
+            continue
+        if filter_batch != "전체" and batch_num != filter_batch:
+            continue
         if filter_stage != "전체" and stage != filter_stage:
+            continue
+
+        # 도면유형 필터
+        _domyun = label_data.get("문서스캔", {}).get("domyun_type", "")
+        if not _domyun:
+            _domyun = label_data.get("도면스캔", {}).get("domyun_type", "")
+        if filter_domyun == "도면포함" and _domyun != "도면포함":
+            continue
+        if filter_domyun == "전체도면" and _domyun != "전체도면":
+            continue
+        if filter_domyun == "도면없음" and _domyun != "":
             continue
 
         bunryu = label_data.get("분류", {})
@@ -799,15 +1077,25 @@ def page_progress(data):
 
         # 면수: 각 공정별로 따로 표시
         myun_myunpyosi = label_data.get("면표시", {}).get("myun", "")
-        myun_scan = label_data.get("문서스캔", {}).get("myun", "")
+        myun_doc = label_data.get("문서스캔", {}).get("myun", 0) or 0
+        myun_draw = label_data.get("도면스캔", {}).get("myun", 0) or 0
+        myun_scan = (myun_doc + myun_draw) if (myun_doc or myun_draw) else ""
         myun_bojung = label_data.get("보정", {}).get("myun", "")
 
         # 색인 건수
         gun_saekin = label_data.get("색인", {}).get("gun", "")
 
+        # 도면유형 판별: 문서스캔의 domyun_type 또는 도면스캔의 domyun_type
+        domyun_type = label_data.get("문서스캔", {}).get("domyun_type", "")
+        if not domyun_type:
+            domyun_type = label_data.get("도면스캔", {}).get("domyun_type", "")
+
         row = {
+            "반입회차": batch_num,
+            "상자번호": box_num,
             "레이블번호": label_num,
             "현재완료공정": stage,
+            "도면유형": domyun_type,
             "분권수": kwon,
             "건수(분류)": gun_bunryu,
             "건수(색인)": gun_saekin,
@@ -830,9 +1118,13 @@ def page_progress(data):
             else:
                 row[f"{proc}"] = ""
 
-        # 비고
-        note = bunryu.get("note", "")
-        row["비고"] = note if note else ""
+        # 비고: 모든 공정의 비고를 합침
+        notes = []
+        for proc in PROCESSES:
+            proc_note = label_data.get(proc, {}).get("note", "")
+            if proc_note:
+                notes.append(f"[{proc}] {proc_note}")
+        row["비고"] = " / ".join(notes) if notes else ""
         rows.append(row)
 
     if not rows:
@@ -843,7 +1135,7 @@ def page_progress(data):
 
     # 컬럼 순서 정의 (xlsx 진행표 시트 포맷)
     col_order = [
-        "레이블번호", "현재완료공정", "분권수",
+        "반입회차", "상자번호", "레이블번호", "현재완료공정", "도면유형", "분권수",
         "건수(분류)", "건수(색인)",
         "면수(면표시)", "면수(스캔)", "면수(보정)",
         "분류", "면표시", "문서스캔", "도면스캔", "보정", "색인", "재편철", "공개구분",
@@ -880,11 +1172,13 @@ def page_progress(data):
     st.subheader("레이블 상세 조회")
     detail_label = st.text_input("레이블번호 입력", key="detail_label_input")
 
-    if detail_label.strip() and detail_label.strip() in labels:
-        ld = labels[detail_label.strip()]
+    detail_key = detail_label.strip()
+    if detail_key and (detail_key in labels or detail_key in registry):
+        ld = labels.get(detail_key, {})
         bunryu = ld.get("분류", {})
+        box = registry.get(detail_key, {}).get("box", "")
 
-        st.markdown(f"**레이블: {detail_label.strip()}**")
+        st.markdown(f"**레이블: {detail_key}**" + (f" (상자: {box})" if box else ""))
         st.markdown(f"- 현재 단계: **{get_label_stage(ld)}**")
         if bunryu:
             st.markdown(f"- 분권수: {bunryu.get('kwon', '-')} / 건수: {bunryu.get('gun', '-')}")
@@ -923,8 +1217,8 @@ def page_progress(data):
 
         st.dataframe(pd.DataFrame(detail_rows), use_container_width=True, hide_index=True)
 
-    elif detail_label.strip():
-        st.warning(f"레이블 '{detail_label.strip()}'을(를) 찾을 수 없습니다.")
+    elif detail_key:
+        st.warning(f"레이블 '{detail_key}'을(를) 찾을 수 없습니다.")
 
 
 # ============================================================
@@ -1310,7 +1604,7 @@ def page_sampling(data):
 def page_settings(data):
     st.title("⚙️ 사업 설정")
 
-    tab1, tab2, tab3 = st.tabs(["사업 정보", "작업자 관리", "데이터 관리"])
+    tab1, tab2, tab_label, tab3 = st.tabs(["사업 정보", "작업자 관리", "레이블 등록", "데이터 관리"])
 
     with tab1:
         st.subheader("사업 기본 정보")
@@ -1438,6 +1732,152 @@ def page_settings(data):
                     st.rerun()
                 else:
                     st.warning("추가할 새 작업자가 없습니다 (이미 등록됨).")
+
+    with tab_label:
+        st.subheader("레이블 목록 등록")
+        st.caption("레이블번호와 상자번호가 포함된 엑셀(xlsx) 또는 CSV 파일을 업로드하세요.")
+
+        registry = data.get("label_registry", {})
+
+        # 현재 등록 현황
+        if registry:
+            st.info(f"현재 등록된 레이블: **{len(registry):,}건**")
+        else:
+            st.info("등록된 레이블이 없습니다. 파일을 업로드하여 레이블을 등록하세요.")
+
+        # 파일 업로드
+        uploaded_labels = st.file_uploader(
+            "레이블 목록 파일", type=["xlsx", "csv"], key="label_upload"
+        )
+
+        if uploaded_labels:
+            try:
+                if uploaded_labels.name.endswith(".csv"):
+                    upload_df = pd.read_csv(uploaded_labels, dtype=str)
+                else:
+                    upload_df = pd.read_excel(uploaded_labels, dtype=str)
+
+                upload_df.columns = upload_df.columns.str.strip()
+
+                # 컬럼 자동 매핑
+                label_col = None
+                box_col = None
+                batch_col = None
+                for col in upload_df.columns:
+                    col_lower = col.lower().strip()
+                    if "레이블" in col_lower or "label" in col_lower:
+                        label_col = col
+                    elif "상자" in col_lower or "box" in col_lower:
+                        box_col = col
+                    elif "반입" in col_lower or "회차" in col_lower or "batch" in col_lower:
+                        batch_col = col
+
+                if label_col is None:
+                    st.warning("레이블 컬럼을 찾을 수 없습니다. 컬럼명에 '레이블' 또는 'label'이 포함되어야 합니다.")
+                    st.caption(f"발견된 컬럼: {', '.join(upload_df.columns.tolist())}")
+
+                    # 수동 매핑
+                    col_options = upload_df.columns.tolist()
+                    label_col = st.selectbox("레이블 컬럼 선택", col_options, key="manual_label_col")
+                    box_col = st.selectbox("상자번호 컬럼 선택", ["(없음)"] + col_options, key="manual_box_col")
+                    batch_col = st.selectbox("반입회차 컬럼 선택", ["(없음)"] + col_options, key="manual_batch_col")
+                    if box_col == "(없음)":
+                        box_col = None
+                    if batch_col == "(없음)":
+                        batch_col = None
+
+                if label_col:
+                    # 미리보기
+                    preview_cols = [label_col]
+                    if box_col:
+                        preview_cols.append(box_col)
+                    if batch_col:
+                        preview_cols.append(batch_col)
+                    preview_df = upload_df[preview_cols].dropna(subset=[label_col]).head(20)
+                    st.markdown(f"**미리보기** (상위 20건, 전체 {len(upload_df)}건)")
+                    st.dataframe(preview_df, use_container_width=True, hide_index=True)
+
+                    # 중복 체크
+                    new_labels = upload_df[label_col].dropna().str.strip().tolist()
+                    new_labels = [l for l in new_labels if l]
+                    existing_overlap = [l for l in new_labels if l in registry]
+
+                    if existing_overlap:
+                        st.warning(f"이미 등록된 레이블 {len(existing_overlap)}건이 있습니다 (덮어쓰기됩니다).")
+
+                    col_mode1, col_mode2 = st.columns(2)
+                    with col_mode1:
+                        if st.button(f"📥 {len(new_labels)}건 등록 (추가)", type="primary", key="add_labels"):
+                            for _, row in upload_df.dropna(subset=[label_col]).iterrows():
+                                lbl = str(row[label_col]).strip()
+                                if not lbl:
+                                    continue
+                                box = str(row[box_col]).strip() if box_col and pd.notna(row.get(box_col)) else ""
+                                batch = str(row[batch_col]).strip() if batch_col and pd.notna(row.get(batch_col)) else ""
+                                registry[lbl] = {"box": box, "batch": batch}
+                            data["label_registry"] = registry
+                            save_data(data)
+                            st.success(f"✅ {len(new_labels)}건 레이블 등록 완료!")
+                            st.rerun()
+                    with col_mode2:
+                        if st.button(f"🔄 기존 삭제 후 {len(new_labels)}건 새로 등록", key="replace_labels"):
+                            new_registry = {}
+                            for _, row in upload_df.dropna(subset=[label_col]).iterrows():
+                                lbl = str(row[label_col]).strip()
+                                if not lbl:
+                                    continue
+                                box = str(row[box_col]).strip() if box_col and pd.notna(row.get(box_col)) else ""
+                                batch = str(row[batch_col]).strip() if batch_col and pd.notna(row.get(batch_col)) else ""
+                                new_registry[lbl] = {"box": box, "batch": batch}
+                            data["label_registry"] = new_registry
+                            save_data(data)
+                            st.success(f"✅ 기존 레이블 삭제 후 {len(new_registry)}건 새로 등록 완료!")
+                            st.rerun()
+
+            except Exception as e:
+                st.error(f"파일 읽기 오류: {e}")
+
+        # 현재 등록 목록 표시
+        if registry:
+            st.divider()
+            st.subheader("등록된 레이블 목록")
+
+            search_reg = st.text_input("레이블 검색", placeholder="레이블번호 입력", key="reg_search")
+
+            reg_rows = []
+            for lbl, info in sorted(registry.items()):
+                if search_reg and search_reg not in lbl:
+                    continue
+                has_work = lbl in data.get("labels", {})
+                stage = get_label_stage(data["labels"][lbl]) if has_work else "미작업"
+                reg_rows.append({
+                    "반입회차": info.get("batch", ""),
+                    "상자번호": info.get("box", ""),
+                    "레이블번호": lbl,
+                    "작업상태": stage,
+                })
+
+            if reg_rows:
+                st.dataframe(pd.DataFrame(reg_rows), use_container_width=True, hide_index=True)
+                st.caption(f"총 {len(reg_rows):,}건")
+
+            st.divider()
+            if st.button("🗑️ 등록 레이블 전체 삭제", key="clear_registry"):
+                st.session_state["confirm_clear_registry"] = True
+            if st.session_state.get("confirm_clear_registry"):
+                st.warning(f"⚠️ 등록된 레이블 {len(registry)}건을 모두 삭제합니다. (실적 데이터는 유지)")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("✅ 예, 삭제", type="primary", key="confirm_clear_reg"):
+                        data["label_registry"] = {}
+                        save_data(data)
+                        st.session_state["confirm_clear_registry"] = False
+                        st.success("레이블 등록 목록 삭제 완료!")
+                        st.rerun()
+                with c2:
+                    if st.button("❌ 취소", key="cancel_clear_reg"):
+                        st.session_state["confirm_clear_registry"] = False
+                        st.rerun()
 
     with tab3:
         st.subheader("데이터 백업 / 복원")
