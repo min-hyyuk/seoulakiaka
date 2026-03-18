@@ -397,24 +397,19 @@ def page_dashboard(data):
 def page_process_sheet(data, process):
     st.title(f"📋 {process}")
 
-    # 1. 작업자 & 작업일자
-    col1, col2 = st.columns(2)
-    with col1:
-        workers = data["workers"] if data["workers"] else ["(작업자를 먼저 등록하세요)"]
-        worker = st.selectbox("작업자", workers, key=f"worker_{process}")
-    with col2:
-        input_date = st.date_input("작업일자", value=date.today(), key=f"date_{process}")
-
-    can_input = data["workers"] and worker != "(작업자를 먼저 등록하세요)"
+    # 1. 작업일자 선택
+    input_date = st.date_input("작업일자", value=date.today(), key=f"date_{process}")
 
     st.divider()
 
-    # 2. 실적 입력 시트
+    # 2. 작업자 선택 & 실적 입력
     st.subheader("실적 입력")
 
-    if not can_input:
+    workers = data["workers"] if data["workers"] else []
+    if not workers:
         st.warning("⚙️ 설정에서 작업자를 먼저 등록해주세요.")
     else:
+        worker = st.selectbox("작업자", workers, key=f"worker_{process}")
         input_df = _render_input_editor(process)
         entries = _extract_entries(data, process, input_df)
 
