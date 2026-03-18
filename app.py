@@ -205,7 +205,7 @@ def main():
     if page == "📋 공정진행표":
         st.sidebar.markdown("---")
         st.sidebar.markdown("**공정별 시트**")
-        sub_items = ["전체 현황"] + PROCESSES
+        sub_items = ["전체 현황", "일별 총괄표"] + PROCESSES
         sub_process = st.sidebar.radio("공정 선택", sub_items, label_visibility="collapsed")
 
     if page == "📈 대시보드":
@@ -213,6 +213,8 @@ def main():
     elif page == "📋 공정진행표":
         if sub_process == "전체 현황":
             page_progress(data)
+        elif sub_process == "일별 총괄표":
+            page_daily_summary(data)
         else:
             page_process_sheet(data, sub_process)
     elif page == "👥 작업자별 현황":
@@ -410,7 +412,10 @@ def page_process_sheet(data, process):
         st.warning("⚙️ 설정에서 작업자를 먼저 등록해주세요.")
     else:
         worker = st.selectbox("작업자", workers, key=f"worker_{process}")
-        input_df = _render_input_editor(process)
+
+        # 에디터 키에 카운터를 붙여서 저장 후 입력란 초기화
+        editor_counter = st.session_state.get(f"editor_cnt_{process}", 0)
+        input_df = _render_input_editor(process, editor_counter)
         entries = _extract_entries(data, process, input_df)
 
         if entries:
@@ -438,7 +443,8 @@ def page_process_sheet(data, process):
                 if unregistered:
                     st.warning(f"⚠️ 등록되지 않은 레이블: {', '.join(unregistered)} (오타를 확인해주세요)")
 
-            # 중복 레이블 체크
+            # 중복 레이블 체크 (해당 공정에서 실제 저장된 경우만)
+            # label_registry에만 있는 레이블은 중복으로 취급하지 않음
             existing_labels = data.get("labels", {})
             duplicates = []
             for e in entries:
@@ -457,7 +463,7 @@ def page_process_sheet(data, process):
 
             if duplicates:
                 for lbl, d in duplicates:
-                    st.error(f"⚠️ 레이블 {lbl}은(는) 이미 {d}에 작성되었습니다.")
+                    st.error(f"⚠️ 레이블 {lbl}은(는) 이미 {process} 공정에서 {d}에 작성되었습니다.")
 
             # 중복 제외한 신규 엔트리만 저장
             new_entries = [e for e in entries if e["label"] not in existing_labels or process not in existing_labels.get(e["label"], {})]
@@ -467,6 +473,8 @@ def page_process_sheet(data, process):
                     _save_entries(data, worker, input_date.isoformat(), process, new_entries)
                     save_data(data)
                     st.success(f"✅ {input_date} {worker} - {process} {len(new_entries)}건 저장 완료!")
+                    # 에디터 키 카운터 증가 → 입력란 초기화
+                    st.session_state[f"editor_cnt_{process}"] = editor_counter + 1
                     st.rerun()
             elif not duplicates:
                 st.button("💾 저장", type="primary", key=f"save_{process}", disabled=True)
@@ -509,7 +517,7 @@ def page_process_sheet(data, process):
     _render_process_daily(data, process)
 
 
-def _render_input_editor(process):
+def _render_input_editor(process, editor_counter=0):
     """공정별 입력 에디터 렌더링"""
     if process == "분류":
         st.caption("레이블, 권, 건을 입력하세요. 비고는 특이사항이 있을 때만 작성합니다.")
@@ -523,7 +531,7 @@ def _render_input_editor(process):
                 "건": st.column_config.NumberColumn("건", min_value=0, default=0, width="small"),
                 "비고": st.column_config.TextColumn("비고", width="large"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     elif process == "문서스캔":
@@ -538,7 +546,7 @@ def _render_input_editor(process):
                 "도면포함": st.column_config.CheckboxColumn("도면포함", default=False, width="small"),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     elif process == "도면스캔":
@@ -553,7 +561,7 @@ def _render_input_editor(process):
                 "전체도면": st.column_config.CheckboxColumn("전체도면", default=False, width="small"),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     elif process in ["면표시", "보정"]:
@@ -567,7 +575,7 @@ def _render_input_editor(process):
                 "면": st.column_config.NumberColumn("면", min_value=0, default=0, width="small"),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     elif process == "색인":
@@ -581,7 +589,7 @@ def _render_input_editor(process):
                 "건": st.column_config.NumberColumn("건", min_value=0, default=0, width="small"),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     elif process in AUTO_PROCESSES:
@@ -593,7 +601,7 @@ def _render_input_editor(process):
                 "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
                 "비고": st.column_config.TextColumn("비고", width="medium"),
             },
-            key=f"editor_{process}",
+            key=f"editor_{process}_{editor_counter}",
             use_container_width=True,
         )
     return pd.DataFrame()
@@ -1214,6 +1222,229 @@ def page_progress(data):
 
     elif detail_key:
         st.warning(f"레이블 '{detail_key}'을(를) 찾을 수 없습니다.")
+
+
+# ============================================================
+# 📋 일별 총괄표
+# ============================================================
+def page_daily_summary(data):
+    st.title("📋 일별 총괄표")
+
+    labels = data.get("labels", {})
+    if not labels:
+        st.info("등록된 실적이 없습니다.")
+        return
+
+    # 일별 데이터 집계
+    daily = {}
+    for label_num, label_data in labels.items():
+        bunryu = label_data.get("분류", {})
+        kwon = bunryu.get("kwon", 1)
+        gun = bunryu.get("gun", 0)
+
+        for proc in PROCESSES:
+            if proc not in label_data:
+                continue
+            entry = label_data[proc]
+            d = entry.get("date", "")
+            if not d:
+                continue
+            w = entry.get("worker", "")
+
+            if d not in daily:
+                daily[d] = {p: {"kwon": 0, "gun": 0, "myun": 0, "workers": set()} for p in PROCESSES}
+
+            pd_entry = daily[d][proc]
+            pd_entry["workers"].add(w)
+
+            if proc == "분류":
+                pd_entry["kwon"] += entry.get("kwon", 0)
+                pd_entry["gun"] += entry.get("gun", 0)
+            elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+                pd_entry["kwon"] += kwon
+                pd_entry["myun"] += entry.get("myun", 0)
+            elif proc == "색인":
+                pd_entry["kwon"] += kwon
+                pd_entry["gun"] += entry.get("gun", 0)
+            elif proc in AUTO_PROCESSES:
+                pd_entry["kwon"] += kwon
+                pd_entry["gun"] += gun
+
+    if not daily:
+        st.info("일별 데이터가 없습니다.")
+        return
+
+    # 누적 계산
+    sorted_dates = sorted(daily.keys())
+    cumulative = {p: {"kwon": 0, "gun": 0, "myun": 0} for p in PROCESSES}
+
+    rows = []
+    for d in sorted_dates:
+        day_data = daily[d]
+        row = {"날짜": d}
+
+        for proc in PROCESSES:
+            p = day_data[proc]
+            worker_cnt = len(p["workers"] - {""})
+            cumulative[proc]["kwon"] += p["kwon"]
+            cumulative[proc]["gun"] += p["gun"]
+            cumulative[proc]["myun"] += p["myun"]
+
+            if proc == "분류":
+                row[f"{proc}_권"] = p["kwon"]
+                row[f"{proc}_건"] = p["gun"]
+                row[f"{proc}_인원"] = worker_cnt
+            elif proc in ["면표시", "보정"]:
+                row[f"{proc}_권"] = p["kwon"]
+                row[f"{proc}_면"] = p["myun"]
+                row[f"{proc}_인원"] = worker_cnt
+            elif proc in ["문서스캔", "도면스캔"]:
+                row[f"{proc}_권"] = p["kwon"]
+                row[f"{proc}_면"] = p["myun"]
+                row[f"{proc}_인원"] = worker_cnt
+            elif proc == "색인":
+                row[f"{proc}_권"] = p["kwon"]
+                row[f"{proc}_건"] = p["gun"]
+                row[f"{proc}_인원"] = worker_cnt
+            elif proc in AUTO_PROCESSES:
+                row[f"{proc}_권"] = p["kwon"]
+                row[f"{proc}_건"] = p["gun"]
+                row[f"{proc}_인원"] = worker_cnt
+
+        rows.append(row)
+
+    # 누적 합계 행
+    total_row = {"날짜": "누적 합계"}
+    for proc in PROCESSES:
+        c = cumulative[proc]
+        if proc == "분류":
+            total_row[f"{proc}_권"] = c["kwon"]
+            total_row[f"{proc}_건"] = c["gun"]
+            total_row[f"{proc}_인원"] = ""
+        elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            total_row[f"{proc}_권"] = c["kwon"]
+            total_row[f"{proc}_면"] = c["myun"]
+            total_row[f"{proc}_인원"] = ""
+        elif proc == "색인":
+            total_row[f"{proc}_권"] = c["kwon"]
+            total_row[f"{proc}_건"] = c["gun"]
+            total_row[f"{proc}_인원"] = ""
+        elif proc in AUTO_PROCESSES:
+            total_row[f"{proc}_권"] = c["kwon"]
+            total_row[f"{proc}_건"] = c["gun"]
+            total_row[f"{proc}_인원"] = ""
+
+    summary_df = pd.DataFrame(rows)
+
+    # 컬럼 순서 정의
+    col_order = ["날짜"]
+    for proc in PROCESSES:
+        if proc == "분류":
+            col_order += [f"{proc}_권", f"{proc}_건", f"{proc}_인원"]
+        elif proc in ["면표시", "문서스캔", "도면스캔", "보정"]:
+            col_order += [f"{proc}_권", f"{proc}_면", f"{proc}_인원"]
+        elif proc == "색인":
+            col_order += [f"{proc}_권", f"{proc}_건", f"{proc}_인원"]
+        elif proc in AUTO_PROCESSES:
+            col_order += [f"{proc}_권", f"{proc}_건", f"{proc}_인원"]
+
+    existing_cols = [c for c in col_order if c in summary_df.columns]
+    summary_df = summary_df[existing_cols]
+
+    # 멀티레벨 컬럼 표시용 이름 변경
+    rename_map = {}
+    for col in summary_df.columns:
+        if col == "날짜":
+            continue
+        parts = col.rsplit("_", 1)
+        rename_map[col] = f"{parts[0]}|{parts[1]}"
+    summary_df = summary_df.rename(columns=rename_map)
+
+    # --- 누적 합계 상단 표시 ---
+    st.subheader("누적 합계")
+    cum_cols = st.columns(len(PROCESSES))
+    for i, proc in enumerate(PROCESSES):
+        c = cumulative[proc]
+        with cum_cols[i]:
+            if proc in ["분류", "색인"] or proc in AUTO_PROCESSES:
+                st.metric(proc, f"{c['kwon']:,}권", f"{c['gun']:,}건")
+            else:
+                st.metric(proc, f"{c['kwon']:,}권", f"{c['myun']:,}면")
+
+    st.divider()
+
+    # --- 필터 ---
+    st.subheader("일별 실적")
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
+        date_range = st.date_input(
+            "기간 선택",
+            value=(
+                datetime.strptime(sorted_dates[0], "%Y-%m-%d").date(),
+                datetime.strptime(sorted_dates[-1], "%Y-%m-%d").date(),
+            ),
+            key="daily_date_range",
+        )
+    with col_f2:
+        sort_order = st.selectbox("정렬", ["오래된순", "최신순"], key="daily_sort")
+
+    # 기간 필터 적용
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        start_d, end_d = date_range
+        filtered_df = summary_df[
+            (summary_df["날짜"] >= start_d.isoformat()) &
+            (summary_df["날짜"] <= end_d.isoformat())
+        ]
+    else:
+        filtered_df = summary_df
+
+    ascending = sort_order == "오래된순"
+    filtered_df = filtered_df.sort_values("날짜", ascending=ascending).reset_index(drop=True)
+
+    st.caption(f"총 {len(filtered_df)}일")
+
+    # 페이지네이션
+    page_size = 30
+    total_pages = max(1, (len(filtered_df) - 1) // page_size + 1)
+    page_num = st.number_input("페이지", min_value=1, max_value=total_pages, value=1, key="daily_page")
+    start_idx = (page_num - 1) * page_size
+    end_idx = min(start_idx + page_size, len(filtered_df))
+
+    st.dataframe(
+        filtered_df.iloc[start_idx:end_idx],
+        use_container_width=True,
+        hide_index=True,
+        height=min(len(filtered_df.iloc[start_idx:end_idx]) * 35 + 38, 800),
+    )
+    st.caption(f"페이지 {page_num}/{total_pages}")
+
+    st.divider()
+
+    # --- 일별 추이 차트 ---
+    st.subheader("일별 추이 차트")
+    chart_proc = st.selectbox("공정 선택", PROCESSES, key="daily_chart_proc")
+
+    chart_df = pd.DataFrame(rows)
+    if chart_proc in ["분류", "색인"] or chart_proc in AUTO_PROCESSES:
+        y_col = f"{chart_proc}_권"
+        y_label = "권"
+    else:
+        y_col = f"{chart_proc}_면"
+        y_label = "면"
+
+    if y_col in chart_df.columns:
+        fig = go.Figure()
+        fig.add_trace(go.Bar(
+            x=chart_df["날짜"], y=chart_df[y_col],
+            name=f"일별 {y_label}",
+            marker_color=PROCESS_COLORS.get(chart_proc, "#4DABF7"),
+        ))
+        fig.update_layout(
+            title=f"{chart_proc} 일별 실적 ({y_label})",
+            xaxis_title="날짜", yaxis_title=y_label,
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 
 # ============================================================
