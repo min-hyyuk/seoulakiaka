@@ -988,69 +988,134 @@ def page_worker_stats(data):
 # ============================================================
 # 🔍 품질검사
 # ============================================================
+ERROR_TYPES = ["누락", "순서오류", "이미지불량", "색인오류", "파일명오류", "기타"]
+
+
 def page_sampling(data):
     st.title("🔍 품질검사")
 
-    st.markdown("""
-    품질목표 **99.9%** 달성을 위한 품질검사 도구입니다.
-    - 주 단위 전수검사 및 월 단위 샘플링 검사 기록
-    - 오류율 자동 계산 및 적합/부적합 판정
-    """)
-
     if "sampling_logs" not in data:
         data["sampling_logs"] = []
+    if "error_labels" not in data:
+        data["error_labels"] = []
 
-    tab1, tab2 = st.tabs(["검사 입력", "검사 현황"])
+    tab1, tab2, tab3, tab4 = st.tabs(["레이블 검사", "검사 현황", "오류 유형 분석", "재작업 관리"])
 
+    # ---- 탭1: 레이블 단위 검사 입력 ----
     with tab1:
-        st.subheader("품질검사 입력")
+        st.subheader("레이블 단위 품질검사")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
             insp_date = st.date_input("검사일자", value=date.today(), key="insp_date")
         with col2:
-            insp_type = st.selectbox("검사유형", ["전수검사", "샘플링검사"])
-        with col3:
-            insp_process = st.selectbox("검사공정", ["기록물정리", "색인", "이미지"])
-
-        col4, col5, col6 = st.columns(3)
-        with col4:
-            total_checked = st.number_input("검사 건수", min_value=1, value=100)
-        with col5:
-            error_count = st.number_input("오류 건수", min_value=0, value=0)
-        with col6:
             inspector = st.selectbox(
                 "검사자",
                 data["workers"] if data["workers"] else ["(작업자를 먼저 등록하세요)"],
+                key="inspector",
             )
 
-        error_rate = round(error_count / total_checked * 100, 3) if total_checked > 0 else 0
-        quality_rate = round(100 - error_rate, 3)
+        col3, col4 = st.columns(2)
+        with col3:
+            insp_type = st.selectbox("검사유형", ["전수검사", "샘플링검사"])
+        with col4:
+            insp_process = st.selectbox("검사공정", PROCESSES)
 
-        error_detail = st.text_area("오류 상세 내용", placeholder="오류 유형 및 내용을 기재하세요...")
+        st.divider()
 
-        if error_rate <= 0.1:
-            st.success(f"✅ **적합** | 품질률: {quality_rate}% | 오류율: {error_rate}%")
-        else:
-            st.error(f"❌ **부적합** | 품질률: {quality_rate}% | 오류율: {error_rate}% (기준: 0.1% 이하)")
+        st.markdown("**검사 대상 레이블 입력**")
+        st.caption("검사한 레이블을 입력하고, 오류가 있는 레이블은 오류유형을 선택하세요.")
 
-        if st.button("💾 검사결과 저장", type="primary"):
-            data["sampling_logs"].append({
-                "date": insp_date.isoformat(),
-                "type": insp_type,
-                "process": insp_process,
-                "total_checked": total_checked,
-                "error_count": error_count,
-                "error_rate": error_rate,
-                "quality_rate": quality_rate,
-                "inspector": inspector,
-                "detail": error_detail,
-                "result": "적합" if error_rate <= 0.1 else "부적합",
-            })
-            save_data(data)
-            st.success("검사결과가 저장되었습니다!")
-            st.rerun()
+        insp_df = st.data_editor(
+            pd.DataFrame({
+                "레이블": pd.Series(dtype="str"),
+                "결과": pd.Series(dtype="str"),
+                "오류유형": pd.Series(dtype="str"),
+                "오류내용": pd.Series(dtype="str"),
+            }),
+            num_rows="dynamic",
+            column_config={
+                "레이블": st.column_config.TextColumn("레이블", required=True, width="medium"),
+                "결과": st.column_config.SelectboxColumn("결과", options=["적합", "오류"], default="적합", width="small"),
+                "오류유형": st.column_config.SelectboxColumn("오류유형", options=ERROR_TYPES, width="small"),
+                "오류내용": st.column_config.TextColumn("오류내용", width="large"),
+            },
+            key="insp_editor",
+            use_container_width=True,
+        )
 
+        # 유효 데이터 추출
+        valid_rows = []
+        if insp_df is not None and len(insp_df) > 0:
+            for _, row in insp_df.iterrows():
+                label = str(row.get("레이블", "")).strip() if pd.notna(row.get("레이블")) else ""
+                if label:
+                    valid_rows.append({
+                        "label": label,
+                        "result": row.get("결과", "적합") if pd.notna(row.get("결과")) else "적합",
+                        "error_type": str(row.get("오류유형", "")).strip() if pd.notna(row.get("오류유형")) else "",
+                        "error_detail": str(row.get("오류내용", "")).strip() if pd.notna(row.get("오류내용")) else "",
+                    })
+
+        if valid_rows:
+            total = len(valid_rows)
+            errors = [r for r in valid_rows if r["result"] == "오류"]
+            error_count = len(errors)
+            error_rate = round(error_count / total * 100, 3) if total > 0 else 0
+            quality_rate = round(100 - error_rate, 3)
+
+            st.divider()
+
+            col_r1, col_r2, col_r3, col_r4 = st.columns(4)
+            with col_r1:
+                st.metric("검사 건수", f"{total}건")
+            with col_r2:
+                st.metric("오류 건수", f"{error_count}건")
+            with col_r3:
+                st.metric("오류율", f"{error_rate}%")
+            with col_r4:
+                if error_rate <= 0.1:
+                    st.metric("판정", "적합")
+                else:
+                    st.metric("판정", "부적합")
+
+            if error_rate <= 0.1:
+                st.success(f"✅ **적합** | 품질률: {quality_rate}% | 오류율: {error_rate}%")
+            else:
+                st.error(f"❌ **부적합** | 품질률: {quality_rate}% | 오류율: {error_rate}% (기준: 0.1% 이하)")
+
+            if st.button("💾 검사결과 저장", type="primary"):
+                # 검사 로그 저장
+                data["sampling_logs"].append({
+                    "date": insp_date.isoformat(),
+                    "type": insp_type,
+                    "process": insp_process,
+                    "total_checked": total,
+                    "error_count": error_count,
+                    "error_rate": error_rate,
+                    "quality_rate": quality_rate,
+                    "inspector": inspector,
+                    "result": "적합" if error_rate <= 0.1 else "부적합",
+                    "labels_checked": [r["label"] for r in valid_rows],
+                })
+
+                # 오류 레이블 개별 기록 + 재작업 대상 등록
+                for r in errors:
+                    data["error_labels"].append({
+                        "date": insp_date.isoformat(),
+                        "label": r["label"],
+                        "process": insp_process,
+                        "error_type": r["error_type"],
+                        "error_detail": r["error_detail"],
+                        "inspector": inspector,
+                        "rework_status": "대기",
+                    })
+
+                save_data(data)
+                st.success(f"✅ 검사결과 저장 완료! (오류 {error_count}건 재작업 대상 등록)")
+                st.rerun()
+
+    # ---- 탭2: 검사 현황 ----
     with tab2:
         st.subheader("검사 이력")
 
@@ -1068,10 +1133,10 @@ def page_sampling(data):
                 pass_count = len(sdf[sdf["result"] == "적합"])
                 st.metric("적합 횟수", f"{pass_count}/{len(sdf)}")
             with col4:
-                avg_error = sdf["error_rate"].mean()
-                st.metric("평균 오류율", f"{avg_error:.3f}%")
+                total_errors = sdf["error_count"].sum()
+                st.metric("총 오류 건수", f"{int(total_errors)}건")
 
-            st.subheader("공정별 품질률 추이")
+            st.subheader("품질률 추이")
             fig = px.line(
                 sdf.sort_values("date"),
                 x="date", y="quality_rate", color="process",
@@ -1083,15 +1148,160 @@ def page_sampling(data):
             st.plotly_chart(fig, use_container_width=True)
 
             st.subheader("검사 이력 테이블")
-            display = sdf.copy()
+            display = sdf[["date", "type", "process", "total_checked", "error_count",
+                           "error_rate", "quality_rate", "inspector", "result"]].copy()
             display["date"] = display["date"].dt.strftime("%Y-%m-%d")
             display.columns = [
                 "날짜", "유형", "공정", "검사건수", "오류건수",
-                "오류율(%)", "품질률(%)", "검사자", "상세내용", "판정",
+                "오류율(%)", "품질률(%)", "검사자", "판정",
             ]
             st.dataframe(display, use_container_width=True, hide_index=True)
         else:
             st.info("아직 검사 이력이 없습니다.")
+
+    # ---- 탭3: 오류 유형 분석 ----
+    with tab3:
+        st.subheader("오류 유형 분석")
+
+        error_labels = data.get("error_labels", [])
+        if not error_labels:
+            st.info("아직 오류 기록이 없습니다.")
+        else:
+            edf = pd.DataFrame(error_labels)
+
+            # 오류 유형별 집계
+            st.markdown("**오류 유형별 건수**")
+            type_counts = edf["error_type"].value_counts().reset_index()
+            type_counts.columns = ["오류유형", "건수"]
+
+            col_chart, col_table = st.columns([2, 1])
+            with col_chart:
+                fig = px.pie(
+                    type_counts, names="오류유형", values="건수",
+                    title="오류 유형 분포",
+                )
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
+            with col_table:
+                st.dataframe(type_counts, use_container_width=True, hide_index=True)
+
+            st.divider()
+
+            # 공정별 오류 집계
+            st.markdown("**공정별 오류 건수**")
+            proc_counts = edf["process"].value_counts().reset_index()
+            proc_counts.columns = ["공정", "건수"]
+
+            fig2 = px.bar(
+                proc_counts, x="공정", y="건수",
+                color="공정", color_discrete_map=PROCESS_COLORS,
+                title="공정별 오류 건수",
+                text="건수",
+            )
+            fig2.update_layout(height=300, showlegend=False)
+            fig2.update_traces(textposition="outside")
+            st.plotly_chart(fig2, use_container_width=True)
+
+            st.divider()
+
+            # 오류 레이블 전체 목록
+            st.markdown("**오류 레이블 목록**")
+            display_e = edf[["date", "label", "process", "error_type", "error_detail",
+                             "inspector", "rework_status"]].copy()
+            display_e.columns = ["검사일", "레이블", "공정", "오류유형", "오류내용", "검사자", "재작업상태"]
+            st.dataframe(display_e, use_container_width=True, hide_index=True)
+
+    # ---- 탭4: 재작업 관리 ----
+    with tab4:
+        st.subheader("재작업 관리")
+
+        error_labels = data.get("error_labels", [])
+        if not error_labels:
+            st.info("재작업 대상이 없습니다.")
+        else:
+            # 상태별 집계
+            edf = pd.DataFrame(error_labels)
+            status_counts = edf["rework_status"].value_counts()
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("재작업 대기", f"{status_counts.get('대기', 0)}건")
+            with col2:
+                st.metric("재작업 완료", f"{status_counts.get('완료', 0)}건")
+            with col3:
+                st.metric("전체 오류", f"{len(edf)}건")
+
+            st.divider()
+
+            # 대기 목록
+            pending = [(i, e) for i, e in enumerate(error_labels) if e.get("rework_status") == "대기"]
+
+            if pending:
+                st.markdown(f"**재작업 대기 ({len(pending)}건)**")
+
+                pending_rows = []
+                for idx, e in pending:
+                    pending_rows.append({
+                        "_idx": idx,
+                        "검사일": e.get("date", ""),
+                        "레이블": e.get("label", ""),
+                        "공정": e.get("process", ""),
+                        "오류유형": e.get("error_type", ""),
+                        "오류내용": e.get("error_detail", ""),
+                    })
+
+                pending_df = pd.DataFrame(pending_rows)
+
+                # 선택 체크박스
+                select_all = st.checkbox("전체 선택", key="rework_select_all")
+                selected_indices = []
+
+                for i, row in enumerate(pending_rows):
+                    cols = st.columns([0.5, 1, 1.5, 1, 1, 3])
+                    with cols[0]:
+                        checked = st.checkbox("", value=select_all, key=f"rework_chk_{row['_idx']}", label_visibility="collapsed")
+                        if checked:
+                            selected_indices.append(row["_idx"])
+                    with cols[1]:
+                        st.caption(row["검사일"])
+                    with cols[2]:
+                        st.caption(row["레이블"])
+                    with cols[3]:
+                        st.caption(row["공정"])
+                    with cols[4]:
+                        st.caption(row["오류유형"])
+                    with cols[5]:
+                        st.caption(row["오류내용"])
+
+                if selected_indices:
+                    st.divider()
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        if st.button(f"✅ 선택 {len(selected_indices)}건 재작업 완료 처리", type="primary"):
+                            for idx in selected_indices:
+                                data["error_labels"][idx]["rework_status"] = "완료"
+                                data["error_labels"][idx]["rework_date"] = date.today().isoformat()
+                            save_data(data)
+                            st.success(f"✅ {len(selected_indices)}건 재작업 완료 처리!")
+                            st.rerun()
+                    with col_b:
+                        if st.button(f"🗑️ 선택 {len(selected_indices)}건 삭제"):
+                            for idx in sorted(selected_indices, reverse=True):
+                                data["error_labels"].pop(idx)
+                            save_data(data)
+                            st.success(f"{len(selected_indices)}건 삭제 완료!")
+                            st.rerun()
+            else:
+                st.success("재작업 대기 건이 없습니다.")
+
+            # 완료 목록
+            completed = [e for e in error_labels if e.get("rework_status") == "완료"]
+            if completed:
+                with st.expander(f"재작업 완료 이력 ({len(completed)}건)"):
+                    comp_df = pd.DataFrame(completed)
+                    display_c = comp_df[["date", "label", "process", "error_type", "rework_date"]].copy()
+                    display_c.columns = ["검사일", "레이블", "공정", "오류유형", "완료일"]
+                    st.dataframe(display_c, use_container_width=True, hide_index=True)
 
 
 # ============================================================
