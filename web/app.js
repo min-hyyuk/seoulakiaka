@@ -832,6 +832,7 @@ function renderProcessSheet(data, c, proc) {
         <div class="filter-item"><label>작업자</label><select id="hw" onchange="renderHistTable('${proc}')">${hwOpts}</select></div>
         <div class="filter-item"><label>날짜</label><select id="hd" onchange="renderHistTable('${proc}')">${hdOpts}</select></div>
         <div class="filter-item"><label>상자번호</label><select id="hb" onchange="renderHistTable('${proc}')">${hbOpts}</select></div>
+        <div class="filter-item"><label>레이블번호</label><input type="text" id="hl" placeholder="번호 검색..." oninput="renderHistTable('${proc}')" style="width:130px"></div>
       </div>
       <div id="hist-table-area"></div>
     </div>
@@ -996,6 +997,7 @@ function renderHistTable(proc) {
   const fWorker  = document.getElementById('hw')?.value || '전체';
   const fDate    = document.getElementById('hd')?.value || '전체';
   const fBox     = document.getElementById('hb')?.value || '전체';
+  const fLabel   = (document.getElementById('hl')?.value || '').trim().toLowerCase();
   const registry = data.label_registry || {};
   const workers  = data.workers || [];
   const rows = [];
@@ -1007,6 +1009,7 @@ function renderHistTable(proc) {
     if (fWorker !== '전체' && e.worker !== fWorker) continue;
     if (fDate   !== '전체' && e.date   !== fDate)   continue;
     if (fBox    !== '전체' && box       !== fBox)    continue;
+    if (fLabel  && !String(num).toLowerCase().includes(fLabel)) continue;
     rows.push({ num, date:e.date||'', worker:e.worker||'', box, entry:e });
   }
   rows.sort((a,b) => b.date.localeCompare(a.date));
