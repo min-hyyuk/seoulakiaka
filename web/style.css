@@ -576,7 +576,7 @@ textarea { resize: vertical; min-height: 80px; }
 .detail-tbl td:nth-child(3) { text-align: left; }
 .detail-tbl td:nth-child(4) { text-align: center; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .detail-tbl td:nth-child(5) { text-align: left; }
-.detail-tbl .progress-bar { flex: 1; min-width: 160px; max-width: 260px; }
+.detail-tbl .progress-bar { flex: 1; min-width: 220px; max-width: 360px; }
 
 /* 실적 세부 칩 */
 .detail-chip {
