@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>기록물 정리사업 공정관리 대시보드</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sb-header">
+        <div class="sb-title">📊 공정관리 대시보드</div>
+        <div class="sb-info" id="sb-proj-name">로딩 중...</div>
+        <div class="sb-info" id="sb-proj-dates"></div>
+      </div>
+      <nav id="sb-nav"></nav>
+    </aside>
+    <main class="main-content" id="main-content">
+      <div class="empty-state">로딩 중...</div>
+    </main>
+  </div>
+
+  <!-- Toast 알림 -->
+  <div id="toast-area"></div>
+
+  <!-- 확인 모달 -->
+  <div class="modal-overlay hidden" id="confirm-overlay">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <p id="confirm-msg" style="margin-bottom:20px;font-size:14px;line-height:1.6"></p>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-secondary" onclick="confirmCancel()">취소</button>
+        <button class="btn btn-danger" onclick="confirmOk()">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 편집 모달 -->
+  <div class="modal-overlay hidden" id="edit-overlay">
+    <div class="modal-box" id="edit-modal-content" onclick="event.stopPropagation()" style="width:520px;max-width:95vw"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
