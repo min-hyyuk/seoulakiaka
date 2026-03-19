@@ -1414,11 +1414,30 @@ function updateWorkerStats() {
     for (const w of workers) pivot[w] = {};
     for (const r of filtered) {
       if (!r.worker) continue;
-      pivot[r.worker][r.proc] = (pivot[r.worker][r.proc]||0) + r.qty;
+      pivot[r.worker][r.proc]       = (pivot[r.worker][r.proc]||0)       + r.qty;
+      if (r.proc === '분류')
+        pivot[r.worker]['분류_kwon'] = (pivot[r.worker]['분류_kwon']||0) + r.kwon;
     }
-    const thead = '<tr><th>작업자</th>' + PROCESSES.map(p=>`<th style="color:${PROCESS_COLORS[p]}">${p}</th>`).join('') + '</tr>';
+
+    // 헤더: 분류는 권호수·건 두 컬럼
+    const theadCols = PROCESSES.map(p =>
+      p === '분류'
+        ? `<th colspan="2" style="color:${PROCESS_COLORS[p]};text-align:center">분류</th>`
+        : `<th style="color:${PROCESS_COLORS[p]}">${p}</th>`
+    ).join('');
+    const theadSub = PROCESSES.map(p =>
+      p === '분류'
+        ? `<th style="font-size:11px;color:${PROCESS_COLORS[p]}">권호수</th><th style="font-size:11px;color:${PROCESS_COLORS[p]}">건</th>`
+        : '<th></th>'
+    ).join('');
+    const thead = `<tr><th rowspan="2">작업자</th>${theadCols}</tr><tr>${theadSub}</tr>`;
+
     const tbody = workers.map(w => {
-      const cells = PROCESSES.map(p=>`<td>${fmt(pivot[w][p]||0)}</td>`).join('');
+      const cells = PROCESSES.map(p =>
+        p === '분류'
+          ? `<td>${fmt(pivot[w]['분류_kwon']||0)}</td><td>${fmt(pivot[w]['분류']||0)}</td>`
+          : `<td>${fmt(pivot[w][p]||0)}</td>`
+      ).join('');
       return `<tr><td><span class="worker-chip">${esc(w)}</span></td>${cells}</tr>`;
     }).join('');
 
