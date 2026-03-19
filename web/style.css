@@ -567,6 +567,17 @@ textarea { resize: vertical; min-height: 80px; }
 .scan-parent-row td { background: #f5f0ff !important; font-weight: 600; }
 .scan-child-row td { background: #faf8ff !important; font-size: 13px; }
 
+/* 공정별 상세 현황 테이블 */
+.detail-tbl { width: 100%; table-layout: fixed; }
+.detail-tbl th, .detail-tbl td { padding: 9px 12px; vertical-align: middle; }
+.detail-tbl th { text-align: center; font-size: 12px; color: var(--text-light); }
+.detail-tbl td:nth-child(1) { font-size: 13px; }
+.detail-tbl td:nth-child(2) { text-align: right; font-size: 13px; }
+.detail-tbl td:nth-child(3) { text-align: left; }
+.detail-tbl td:nth-child(4) { text-align: right; font-size: 13px; font-weight: 600; }
+.detail-tbl td:nth-child(5) { text-align: left; }
+.detail-tbl .progress-bar { flex: 1; min-width: 80px; max-width: 140px; }
+
 /* 실적 세부 칩 */
 .detail-chip {
   display: inline-block;

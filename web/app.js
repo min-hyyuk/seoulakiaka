@@ -434,7 +434,14 @@ function renderDashboard(data, c) {
     <div class="gauge-grid">${gaugeHtml}</div>
     <hr class="divider">
     <div class="section-header">공정별 상세 현황</div>
-    <div class="card"><div class="table-wrap"><table>
+    <div class="card"><div class="table-wrap"><table class="detail-tbl">
+      <colgroup>
+        <col style="width:90px">
+        <col style="width:90px">
+        <col style="width:220px">
+        <col style="width:90px">
+        <col>
+      </colgroup>
       <thead><tr><th>공정</th><th>목표(권)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
