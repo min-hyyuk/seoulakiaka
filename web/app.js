@@ -723,39 +723,20 @@ function renderDailySummary(data, c) {
       cumTotals[p].myun   += daily[d][p].myun;
     }
 
-  // 스캔합계 누적
-  const scanCumKwon = cumTotals['문서스캔'].kwon + cumTotals['도면스캔'].kwon;
-  const scanCumMyun = cumTotals['문서스캔'].myun + cumTotals['도면스캔'].myun;
-  const SCAN_COLOR_DS = '#805ad5';
-
-  function makeCumCard(p, ct, color, label, isChild) {
+  const cumMetrics = PROCESSES.map(p => {
+    const ct = cumTotals[p];
     const cols = p === '분류'
       ? [{ val: fmt(ct.labels), label: '권' }, { val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }]
-      : p === '__scan__'
-        ? [{ val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.myun), label: '면' }]
-        : [{ val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }, { val: fmt(ct.myun), label: '면' }];
-    const colsHtml = cols.map(({val, label: l}) => `
+      : [{ val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }, { val: fmt(ct.myun), label: '면' }];
+    const colsHtml = cols.map(({val, label}) => `
       <div class="cm-hcol">
         <div class="cm-hval">${val}</div>
-        <div class="cm-hlabel">${l}</div>
+        <div class="cm-hlabel">${label}</div>
       </div>`).join('');
-    const indent = isChild ? 'padding-left:14px;font-size:12px' : '';
-    const prefix = isChild ? (p === '도면스캔' ? '┗ ' : '┣ ') : '';
-    return `<div class="metric-card${isChild ? ' cm-child-card' : ''}" style="--pc:${color}">
-      <div class="metric-label" style="color:${color};${indent}">${prefix}${label}</div>
+    return `<div class="metric-card" style="--pc:${PROCESS_COLORS[p]}">
+      <div class="metric-label" style="color:${PROCESS_COLORS[p]}">${p}</div>
       <div class="cm-hrow">${colsHtml}</div>
     </div>`;
-  }
-
-  const CM_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
-  const cumMetrics = CM_ORDER.map(p => {
-    if (p === '__scan__') {
-      const scanCard = makeCumCard('__scan__', { kwon: scanCumKwon, myun: scanCumMyun }, SCAN_COLOR_DS, '스캔합계', false);
-      const msCard   = makeCumCard('문서스캔', cumTotals['문서스캔'], PROCESS_COLORS['문서스캔'], '문서스캔', true);
-      const dsCard   = makeCumCard('도면스캔', cumTotals['도면스캔'], PROCESS_COLORS['도면스캔'], '도면스캔', true);
-      return scanCard + msCard + dsCard;
-    }
-    return makeCumCard(p, cumTotals[p], PROCESS_COLORS[p], p, false);
   }).join('');
 
   // Table header
@@ -804,7 +785,7 @@ function renderDailySummary(data, c) {
   c.innerHTML = `
     <div class="page-title">📋 일별 총괄표</div>
     <div class="section-header">누적 합계</div>
-    <div class="metrics-grid" style="grid-template-columns:repeat(5,1fr)">${cumMetrics}</div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">${cumMetrics}</div>
     <hr class="divider">
     <div class="section-header">일별 실적</div>
     <div class="card"><div class="scroll-x"><table class="ds-table">

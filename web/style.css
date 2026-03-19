@@ -723,12 +723,6 @@ textarea { resize: vertical; min-height: 80px; }
   line-height: 1.2;
 }
 
-.cm-child-card {
-  background: #faf8ff;
-  border-left: 3px solid color-mix(in srgb, var(--pc, #ccc) 40%, transparent);
-  margin-left: 8px;
-}
-
 /* 수평 셀 레이아웃 */
 .ds-hrow {
   display: flex;
