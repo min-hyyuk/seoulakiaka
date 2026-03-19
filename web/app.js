@@ -748,7 +748,7 @@ function renderDailySummary(data, c) {
     </th>`;
   }).join('');
 
-  const cleanRows = [...dates].reverse().map(d => {
+  const cleanRows = [...dates].map(d => {
     const row = daily[d];
     const cells = PROCESSES.map(p => {
       const pd = row[p];
