@@ -376,29 +376,23 @@ function renderDashboard(data, c) {
   for (const proc of TABLE_ORDER) {
     if (proc === '__scan__') {
       const scanRemSFmt = `${fmt(scanRemS)}면`;
-      const scanDetailChips = [
-        `<span class="detail-chip">${fmt(scanCP)}권호수</span>`,
-        `<span class="detail-chip">${fmt(scanCS)}면</span>`
-      ].join('');
+      const scanDetailChips = detailChips('문서스캔').replace(/권호수|면/g, s=>s) && `<span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanCS)}면</span>`;
       // Parent: 스캔합계
       tRows += `<tr class="scan-parent-row">
         <td><span style="color:${SCAN_COLOR};font-weight:700">스캔합계</span></td>
         <td>${fmt(scanTK)}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div>
-            <span>${scanRP}%</span>
-          </div>
-        </td>
+        <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div><span class="dt-bar-pct">${scanRP}%</span></div></td>
         <td>${scanRemSFmt}</td>
-        <td>${scanDetailChips}</td>
+        <td><span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanCS)}면</span></td>
       </tr>`;
       // Children: 실적만, 공정율·잔여 없음
       for (const sub of ['문서스캔','도면스캔']) {
         const isLast = sub === '도면스캔';
         tRows += `<tr class="scan-child-row">
-          <td colspan="3"><span style="color:${PROCESS_COLORS[sub]};padding-left:16px">${isLast?'┗':'┣'} ${sub}</span></td>
-          <td>—</td>
+          <td><span style="color:${PROCESS_COLORS[sub]};padding-left:14px">${isLast?'┗':'┣'} ${sub}</span></td>
+          <td></td>
+          <td></td>
+          <td style="text-align:center">—</td>
           <td>${detailChips(sub)}</td>
         </tr>`;
       }
@@ -407,12 +401,7 @@ function renderDashboard(data, c) {
       tRows += `<tr>
         <td><span style="color:${PROCESS_COLORS[proc]};font-weight:600">${proc}</span></td>
         <td>${fmt(cv.tkwon)}</td>
-        <td>
-          <div style="display:flex;align-items:center;gap:8px">
-            <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(cv.rp,100)}%;background:${PROCESS_COLORS[proc]}"></div></div>
-            <span>${cv.rp}%</span>
-          </div>
-        </td>
+        <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(cv.rp,100)}%;background:${PROCESS_COLORS[proc]}"></div></div><span class="dt-bar-pct">${cv.rp}%</span></div></td>
         <td>${remCell(proc, cv)}</td>
         <td>${detailChips(proc)}</td>
       </tr>`;
@@ -435,7 +424,14 @@ function renderDashboard(data, c) {
     <hr class="divider">
     <div class="section-header">공정별 상세 현황</div>
     <div class="card"><div class="table-wrap"><table class="detail-tbl">
-      <thead><tr><th style="width:120px">공정</th><th style="width:130px">목표(권)</th><th style="min-width:360px">공정율</th><th style="width:110px">잔여량</th><th>실적 세부</th></tr></thead>
+      <colgroup>
+        <col style="width:11%">
+        <col style="width:10%">
+        <col style="width:38%">
+        <col style="width:15%">
+        <col style="width:26%">
+      </colgroup>
+      <thead><tr><th>공정</th><th>목표(권)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
     ${hasData ? `
