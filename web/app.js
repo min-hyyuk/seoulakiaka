@@ -713,17 +713,17 @@ function renderDailySummary(data, c) {
 
   const cumMetrics = PROCESSES.map(p => {
     const ct = cumTotals[p];
-    let lines = '';
-    if (p === '분류') {
-      lines = `<div class="metric-value" style="font-size:15px">${fmt(ct.labels)}권</div>
-               <div class="metric-delta">${fmt(ct.kwon)}권호수 · ${fmt(ct.gun)}건</div>`;
-    } else {
-      lines = `<div class="metric-value" style="font-size:15px">${fmt(ct.kwon)}권호수</div>
-               <div class="metric-delta">${fmt(ct.gun)}건 · ${fmt(ct.myun)}면</div>`;
-    }
-    return `<div class="metric-card">
+    const cols = p === '분류'
+      ? [{ val: fmt(ct.labels), label: '권' }, { val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }]
+      : [{ val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }, { val: fmt(ct.myun), label: '면' }];
+    const colsHtml = cols.map(({val, label}) => `
+      <div class="cm-hcol">
+        <div class="cm-hval">${val}</div>
+        <div class="cm-hlabel">${label}</div>
+      </div>`).join('');
+    return `<div class="metric-card" style="--pc:${PROCESS_COLORS[p]}">
       <div class="metric-label" style="color:${PROCESS_COLORS[p]}">${p}</div>
-      ${lines}
+      <div class="cm-hrow">${colsHtml}</div>
     </div>`;
   }).join('');
 
