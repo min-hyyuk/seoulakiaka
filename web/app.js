@@ -915,7 +915,7 @@ function renderProcessSheet(data, c, proc) {
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="saveProcessEntries('${proc}')">💾 저장</button>
-        <span class="caption" style="align-self:center">💡 마지막 칸에서 Enter 키 → 다음 행 자동 추가</span>
+        <span class="caption" style="align-self:center">💡 레이블 칸 또는 마지막 칸에서 Enter → 다음 행 자동 추가</span>
       </div>
       <div id="inp-msg"></div>
     </div>
@@ -985,12 +985,19 @@ function addInputRow(proc, focusFirst) {
     inp.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
       e.preventDefault();
-      if (idx < inputs.length - 1) {
-        // 같은 행 다음 칸으로 이동
+      if (idx === 0) {
+        // 레이블 칸 → 새 행 추가 후 레이블 칸 포커스 (레이블 일괄 입력 지원)
+        const newRow = addInputRow(proc, true);
+        if (newRow) {
+          const firstInp = newRow.querySelector('input');
+          firstInp?.focus();
+        }
+      } else if (idx < inputs.length - 1) {
+        // 중간 칸 → 같은 행 다음 칸으로 이동
         inputs[idx + 1].focus();
         inputs[idx + 1].select?.();
       } else {
-        // 마지막 칸 → 새 행 추가 후 첫 칸 포커스
+        // 마지막 칸 → 새 행 추가 후 레이블 칸 포커스
         const newRow = addInputRow(proc, true);
         if (newRow) {
           const firstInp = newRow.querySelector('input');
