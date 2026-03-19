@@ -435,7 +435,7 @@ function renderDashboard(data, c) {
     <hr class="divider">
     <div class="section-header">공정별 상세 현황</div>
     <div class="card"><div class="table-wrap"><table class="detail-tbl">
-      <thead><tr><th style="width:80px">공정</th><th style="width:90px">목표(권)</th><th style="min-width:200px">공정율</th><th style="width:100px">잔여량</th><th>실적 세부</th></tr></thead>
+      <thead><tr><th style="width:120px">공정</th><th style="width:130px">목표(권)</th><th style="min-width:280px">공정율</th><th style="width:110px">잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
     ${hasData ? `
