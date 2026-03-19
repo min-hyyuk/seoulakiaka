@@ -519,7 +519,35 @@ function renderProgressOverview(data, c) {
     for (const p of PROCESSES) if (p in ld) procDone[p]++;
   }
 
-  const metricHtml = PROCESSES.map((p,i) => {
+  // 스캔합계: 문서스캔 또는 도면스캔 중 하나라도 완료된 레이블 수
+  const scanDone = allNums.filter(n => (labels[n]||{})['문서스캔'] || (labels[n]||{})['도면스캔']).length;
+  const scanRate = total > 0 ? (scanDone/total*100).toFixed(1) : 0;
+  const SCAN_COLOR_PO = '#805ad5';
+
+  function poCard(p, cnt) {
+    const rate = total > 0 ? (cnt/total*100).toFixed(1) : 0;
+    return `<div class="scan-inline-item" style="--pc:${PROCESS_COLORS[p]}">
+      <div class="metric-label" style="color:${PROCESS_COLORS[p]};font-size:12px;margin-bottom:4px">${p}</div>
+      <div style="font-size:16px;font-weight:700">${fmt(cnt)} <span style="font-size:11px;color:#718096">/ ${fmt(total)}</span></div>
+      <div style="font-size:11px;color:#718096;margin-top:2px">${rate}%</div>
+    </div>`;
+  }
+
+  const scanBlock = `<div class="scan-cum-block" style="grid-column:span 2">
+    <div class="scan-inline-item" style="--pc:${SCAN_COLOR_PO}">
+      <div class="metric-label" style="color:${SCAN_COLOR_PO};font-size:13px;margin-bottom:4px">스캔합계</div>
+      <div style="font-size:18px;font-weight:700">${fmt(scanDone)} <span style="font-size:12px;color:#718096">/ ${fmt(total)}</span></div>
+      <div style="font-size:12px;color:#718096;margin-top:2px">${scanRate}%</div>
+    </div>
+    <div class="scan-inline-divider"></div>
+    ${poCard('문서스캔', procDone['문서스캔'])}
+    <div class="scan-inline-divider"></div>
+    ${poCard('도면스캔', procDone['도면스캔'])}
+  </div>`;
+
+  const PO_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
+  const metricHtml = PO_ORDER.map(p => {
+    if (p === '__scan__') return scanBlock;
     const cnt = procDone[p];
     const rate = total > 0 ? (cnt/total*100).toFixed(1) : 0;
     return `<div class="metric-card">
@@ -537,7 +565,7 @@ function renderProgressOverview(data, c) {
   c.innerHTML = `
     <div class="page-title">📋 공정진행표</div>
     <div class="section-header">공정별 완료 현황</div>
-    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">${metricHtml}</div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);align-items:start">${metricHtml}</div>
     <hr class="divider">
     <div class="section-header">레이블 상세</div>
     <div class="filter-row">
