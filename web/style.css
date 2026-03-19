@@ -800,6 +800,12 @@ textarea { resize: vertical; min-height: 80px; }
 .he-ro { color: var(--text); }
 
 /* ============================================================
+   Worker stats table */
+#ws-content table th,
+#ws-content table td { text-align: center; }
+#ws-content table td:first-child { text-align: center; }
+
+/* ============================================================
    Worker chip */
 .worker-chip {
   display: inline-block;
