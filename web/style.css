@@ -547,7 +547,7 @@ textarea { resize: vertical; min-height: 80px; }
 /* 전체 현황 스크롤 테이블 — 헤더 고정, 세로 스크롤 */
 .scroll-table-wrap {
   overflow: auto;
-  max-height: 600px;
+  max-height: calc(100vh - 320px);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
