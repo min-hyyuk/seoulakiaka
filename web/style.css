@@ -544,6 +544,22 @@ textarea { resize: vertical; min-height: 80px; }
 
 .scroll-x { overflow-x: auto; }
 
+/* 전체 현황 스크롤 테이블 — 헤더 고정, 세로 스크롤 */
+.scroll-table-wrap {
+  overflow: auto;
+  max-height: 600px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.scroll-table-wrap table { border-collapse: collapse; width: 100%; }
+.scroll-table-wrap thead th {
+  position: sticky;
+  top: 0;
+  background: #f7f8fc;
+  z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
+}
+
 .flex-row { display: flex; gap: 8px; align-items: center; }
 .flex-1 { flex: 1; }
 

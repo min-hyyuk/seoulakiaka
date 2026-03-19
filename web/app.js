@@ -610,14 +610,8 @@ function applyProgressFilter() {
       procCells });
   }
 
-  const PAGE_SIZE = 50;
-  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
-  const pg = Math.min(window._progressPage || 1, totalPages);
-  window._progressPage = pg;
-  const slice = rows.slice((pg-1)*PAGE_SIZE, pg*PAGE_SIZE);
-
   let tableHtml = `<div class="caption mb-8">총 ${fmt(rows.length)}건</div>
-    <div class="table-wrap"><table>
+    <div class="scroll-table-wrap"><table>
     <thead><tr>
       <th>반입회차</th><th>상자번호</th><th>레이블번호</th><th>현재공정</th><th>도면유형</th>
       <th>분권수</th><th>건수(분류)</th><th>건수(색인)</th>
@@ -625,7 +619,7 @@ function applyProgressFilter() {
       ${PROCESSES.map(p=>`<th>${p}</th>`).join('')}
     </tr></thead><tbody>`;
 
-  for (const r of slice) {
+  for (const r of rows) {
     tableHtml += `<tr>
       <td>${esc(r.batch)}</td><td>${esc(r.box)}</td>
       <td><strong>${esc(r.num)}</strong></td>
@@ -637,19 +631,6 @@ function applyProgressFilter() {
     </tr>`;
   }
   tableHtml += '</tbody></table></div>';
-
-  // Pagination
-  if (totalPages > 1) {
-    tableHtml += '<div class="pagination">';
-    tableHtml += `<button onclick="setProgressPage(${pg-1})" ${pg<=1?'disabled':''}>◀</button>`;
-    const lo = Math.max(1, pg-2), hi = Math.min(totalPages, pg+2);
-    if (lo>1) tableHtml += `<button onclick="setProgressPage(1)">1</button>${lo>2?'<span class="page-info">…</span>':''}`;
-    for (let i=lo; i<=hi; i++)
-      tableHtml += `<button class="${i===pg?'cur':''}" onclick="setProgressPage(${i})">${i}</button>`;
-    if (hi<totalPages) tableHtml += `${hi<totalPages-1?'<span class="page-info">…</span>':''}<button onclick="setProgressPage(${totalPages})">${totalPages}</button>`;
-    tableHtml += `<button onclick="setProgressPage(${pg+1})" ${pg>=totalPages?'disabled':''}>▶</button>`;
-    tableHtml += `<span class="page-info">${pg}/${totalPages}페이지</span></div>`;
-  }
 
   document.getElementById('progress-table-area').innerHTML = tableHtml;
 }
