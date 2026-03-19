@@ -272,6 +272,24 @@ function renderDashboard(data, c) {
   const scanTK = cum['문서스캔'].tkwon;
   const scanCP = cum['문서스캔'].cp + cum['도면스캔'].cp;
   const scanCS = cum['문서스캔'].cs + cum['도면스캔'].cs;
+  const scanRemS = Math.max(0, (cum['문서스캔'].tmyun || 0) - scanCS);
+
+  // 공정별 실적 세부 (권호수·건·면) — 일별 총괄표 누적합계와 동일 로직
+  const cumDetail = {};
+  for (const proc of PROCESSES) cumDetail[proc] = { labels:0, kwon:0, gun:0, myun:0 };
+  for (const [, ld] of Object.entries(labels)) {
+    const b = ld['분류'] || {};
+    const bKwon = b.kwon || 1;
+    const bGun  = b.gun  || 0;
+    for (const proc of PROCESSES) {
+      if (!(proc in ld)) continue;
+      const e  = ld[proc];
+      const pd = cumDetail[proc];
+      pd.labels += 1;
+      if (proc === '분류') { pd.kwon += e.kwon||0; pd.gun += e.gun||0; }
+      else { pd.kwon += bKwon; pd.gun += bGun; pd.myun += e.myun||0; }
+    }
+  }
   const scanRP = scanTK > 0 ? Math.round(scanCP / scanTK * 1000) / 10 : 0;
   const scanRemP = Math.max(0, scanTK - scanCP);
 
@@ -330,56 +348,73 @@ function renderDashboard(data, c) {
     }
   }
 
+  // 잔여량 단위 헬퍼
+  const REM_MYUN_PROCS = new Set(['면표시','보정']); // 스캔합계·자식은 별도처리
+  function remCell(proc, cv) {
+    if (REM_MYUN_PROCS.has(proc)) return `${fmt(cv.remS)}면`;
+    return `${fmt(cv.remP)}권`;
+  }
+  // 실적세부 칩 헬퍼
+  function detailChips(proc) {
+    const d = cumDetail[proc];
+    let chips = [];
+    if (proc === '분류') {
+      chips = [`${fmt(d.labels)}권`, `${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`];
+    } else if (['면표시','보정'].includes(proc)) {
+      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`, `${fmt(d.myun)}면`];
+    } else if (['문서스캔','도면스캔'].includes(proc)) {
+      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.myun)}면`];
+    } else {
+      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`];
+    }
+    return chips.map(t => `<span class="detail-chip">${t}</span>`).join('');
+  }
+
   // Detail table rows — 스캔합계 as parent, 문서스캔/도면스캔 as indented children
   const TABLE_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
   let tRows = '';
   for (const proc of TABLE_ORDER) {
     if (proc === '__scan__') {
+      const scanRemSFmt = `${fmt(scanRemS)}면`;
+      const scanDetailChips = [
+        `<span class="detail-chip">${fmt(scanCP)}권호수</span>`,
+        `<span class="detail-chip">${fmt(scanCS)}면</span>`
+      ].join('');
       // Parent: 스캔합계
       tRows += `<tr class="scan-parent-row">
         <td><span style="color:${SCAN_COLOR};font-weight:700">스캔합계</span></td>
-        <td>${fmt(scanTK)}</td><td>${fmt(scanCP)}</td>
+        <td>${fmt(scanTK)}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div>
             <span>${scanRP}%</span>
           </div>
         </td>
-        <td>${fmt(scanRemP)}</td>
-        <td>${fmt(scanCS)} 면</td>
+        <td>${scanRemSFmt}</td>
+        <td>${scanDetailChips}</td>
       </tr>`;
-      // Children: 문서스캔, 도면스캔
+      // Children: 실적만, 공정율·잔여 없음
       for (const sub of ['문서스캔','도면스캔']) {
-        const cv = cum[sub];
-        const up = PROCESS_UNITS[sub];
         const isLast = sub === '도면스캔';
         tRows += `<tr class="scan-child-row">
-          <td><span style="color:${PROCESS_COLORS[sub]};padding-left:16px">${isLast?'┗':'┣'} ${sub}</span></td>
-          <td>${fmt(cv.tkwon)}</td><td>${fmt(cv.cp)}</td>
-          <td>
-            <div style="display:flex;align-items:center;gap:8px">
-              <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(cv.rp,100)}%;background:${PROCESS_COLORS[sub]}"></div></div>
-              <span>${cv.rp}%</span>
-            </div>
-          </td>
-          <td>${fmt(cv.remP)}</td>
-          <td>${fmt(cv.cs)} ${up.s}</td>
+          <td colspan="3"><span style="color:${PROCESS_COLORS[sub]};padding-left:16px">${isLast?'┗':'┣'} ${sub}</span></td>
+          <td>—</td>
+          <td>${detailChips(sub)}</td>
         </tr>`;
       }
     } else {
       const cv = cum[proc];
-      const up = PROCESS_UNITS[proc];
       tRows += `<tr>
         <td><span style="color:${PROCESS_COLORS[proc]};font-weight:600">${proc}</span></td>
-        <td>${fmt(cv.tkwon)}</td><td>${fmt(cv.cp)}</td>
+        <td>${fmt(cv.tkwon)}</td>
         <td>
           <div style="display:flex;align-items:center;gap:8px">
             <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(cv.rp,100)}%;background:${PROCESS_COLORS[proc]}"></div></div>
             <span>${cv.rp}%</span>
           </div>
         </td>
-        <td>${fmt(cv.remP)}</td>
-        <td>${fmt(cv.cs)} ${up.s}</td>
+        <td>${remCell(proc, cv)}</td>
+        <td>${detailChips(proc)}</td>
       </tr>`;
     }
   }
@@ -400,7 +435,7 @@ function renderDashboard(data, c) {
     <hr class="divider">
     <div class="section-header">공정별 상세 현황</div>
     <div class="card"><div class="table-wrap"><table>
-      <thead><tr><th>공정</th><th>목표(권)</th><th>실적(권)</th><th>공정율</th><th>잔여(권)</th><th>실적(수량)</th></tr></thead>
+      <thead><tr><th>공정</th><th>목표(권)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
     ${hasData ? `

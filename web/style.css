@@ -567,6 +567,19 @@ textarea { resize: vertical; min-height: 80px; }
 .scan-parent-row td { background: #f5f0ff !important; font-weight: 600; }
 .scan-child-row td { background: #faf8ff !important; font-size: 13px; }
 
+/* 실적 세부 칩 */
+.detail-chip {
+  display: inline-block;
+  background: #edf2f7;
+  color: #2d3748;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin: 1px 2px;
+  white-space: nowrap;
+}
+
 /* Scan gauge card sub-info */
 .gauge-card-scan { border: 1px solid #d6bcfa; }
 .scan-sub-row { display: flex; justify-content: space-around; padding: 4px 0 2px; border-top: 1px dashed #d6bcfa; margin-top: 4px; }
