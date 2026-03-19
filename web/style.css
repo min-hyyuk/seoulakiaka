@@ -723,27 +723,31 @@ textarea { resize: vertical; min-height: 80px; }
   line-height: 1.2;
 }
 
-/* 스캔합계 블록 — 상단 합계 + 하단 서브 나란히 */
+/* 스캔합계 블록 — 스캔합계·문서스캔·도면스캔 한 줄 가로 배치 */
 .scan-cum-block {
   grid-column: span 2;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: center;
+  background: var(--card);
+  border-radius: 8px;
+  padding: 16px 8px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  gap: 0;
 }
-.scan-cum-sub {
+.scan-inline-item {
+  flex: 1;
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 8px;
 }
-.scan-cum-sub .metric-card { flex: 1; }
-.cm-sub-card {
-  background: #faf8ff;
-  border-left: 3px solid color-mix(in srgb, var(--pc,#ccc) 50%, transparent);
-  padding: 8px 10px;
+.scan-inline-divider {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border);
+  margin: 4px 4px;
 }
-.cm-sub-card .metric-label { font-size: 11px; margin-bottom: 4px; }
-.cm-sub-card .cm-hval      { font-size: 13px; }
-.cm-sub-card .cm-hlabel    { font-size: 9px; }
-.cm-sub-card .cm-hcol      { padding: 0 6px; min-width: 28px; }
 
 /* 수평 셀 레이아웃 */
 .ds-hrow {

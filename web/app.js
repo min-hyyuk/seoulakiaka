@@ -743,25 +743,31 @@ function renderDailySummary(data, c) {
     </div>`;
   }
 
-  // 스캔 블록: 스캔합계(상단) + 문서스캔·도면스캔(하단 나란히)
+  // 스캔 블록: 스캔합계·문서스캔·도면스캔 한 줄 가로 배치
+  function cmInlineCard(color, title, cols) {
+    return `<div class="scan-inline-item" style="--pc:${color}">
+      <div class="metric-label" style="color:${color};font-size:12px;margin-bottom:6px">${title}</div>
+      <div class="cm-hrow">${cmCols(cols)}</div>
+    </div>`;
+  }
   const scanBlock = `<div class="scan-cum-block">
-    ${cmCard(SCAN_COLOR_CUM, '스캔합계', [
+    ${cmInlineCard(SCAN_COLOR_CUM, '스캔합계', [
       {val: fmt(scanCumKwon), label:'권호수'},
       {val: fmt(scanCumGun),  label:'건'},
       {val: fmt(scanCumMyun), label:'면'}
     ])}
-    <div class="scan-cum-sub">
-      ${cmCard(PROCESS_COLORS['문서스캔'], '┣ 문서스캔', [
-        {val: fmt(cumTotals['문서스캔'].kwon), label:'권호수'},
-        {val: fmt(cumTotals['문서스캔'].gun),  label:'건'},
-        {val: fmt(cumTotals['문서스캔'].myun), label:'면'}
-      ], ' cm-sub-card')}
-      ${cmCard(PROCESS_COLORS['도면스캔'], '┗ 도면스캔', [
-        {val: fmt(cumTotals['도면스캔'].kwon), label:'권호수'},
-        {val: fmt(cumTotals['도면스캔'].gun),  label:'건'},
-        {val: fmt(cumTotals['도면스캔'].myun), label:'면'}
-      ], ' cm-sub-card')}
-    </div>
+    <div class="scan-inline-divider"></div>
+    ${cmInlineCard(PROCESS_COLORS['문서스캔'], '┣ 문서스캔', [
+      {val: fmt(cumTotals['문서스캔'].kwon), label:'권호수'},
+      {val: fmt(cumTotals['문서스캔'].gun),  label:'건'},
+      {val: fmt(cumTotals['문서스캔'].myun), label:'면'}
+    ])}
+    <div class="scan-inline-divider"></div>
+    ${cmInlineCard(PROCESS_COLORS['도면스캔'], '┗ 도면스캔', [
+      {val: fmt(cumTotals['도면스캔'].kwon), label:'권호수'},
+      {val: fmt(cumTotals['도면스캔'].gun),  label:'건'},
+      {val: fmt(cumTotals['도면스캔'].myun), label:'면'}
+    ])}
   </div>`;
 
   const CM_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
