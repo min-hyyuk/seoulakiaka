@@ -723,20 +723,55 @@ function renderDailySummary(data, c) {
       cumTotals[p].myun   += daily[d][p].myun;
     }
 
-  const cumMetrics = PROCESSES.map(p => {
-    const ct = cumTotals[p];
-    const cols = p === '분류'
-      ? [{ val: fmt(ct.labels), label: '권' }, { val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }]
-      : [{ val: fmt(ct.kwon), label: '권호수' }, { val: fmt(ct.gun), label: '건' }, { val: fmt(ct.myun), label: '면' }];
-    const colsHtml = cols.map(({val, label}) => `
+  // 스캔합계 누적
+  const scanCumKwon = cumTotals['문서스캔'].kwon + cumTotals['도면스캔'].kwon;
+  const scanCumGun  = cumTotals['문서스캔'].gun  + cumTotals['도면스캔'].gun;
+  const scanCumMyun = cumTotals['문서스캔'].myun + cumTotals['도면스캔'].myun;
+  const SCAN_COLOR_CUM = '#805ad5';
+
+  function cmCols(cols) {
+    return cols.map(({val, label}) => `
       <div class="cm-hcol">
         <div class="cm-hval">${val}</div>
         <div class="cm-hlabel">${label}</div>
       </div>`).join('');
-    return `<div class="metric-card" style="--pc:${PROCESS_COLORS[p]}">
-      <div class="metric-label" style="color:${PROCESS_COLORS[p]}">${p}</div>
-      <div class="cm-hrow">${colsHtml}</div>
+  }
+  function cmCard(color, title, cols, extra='') {
+    return `<div class="metric-card${extra}" style="--pc:${color}">
+      <div class="metric-label" style="color:${color}">${title}</div>
+      <div class="cm-hrow">${cmCols(cols)}</div>
     </div>`;
+  }
+
+  // 스캔 블록: 스캔합계(상단) + 문서스캔·도면스캔(하단 나란히)
+  const scanBlock = `<div class="scan-cum-block">
+    ${cmCard(SCAN_COLOR_CUM, '스캔합계', [
+      {val: fmt(scanCumKwon), label:'권호수'},
+      {val: fmt(scanCumGun),  label:'건'},
+      {val: fmt(scanCumMyun), label:'면'}
+    ])}
+    <div class="scan-cum-sub">
+      ${cmCard(PROCESS_COLORS['문서스캔'], '┣ 문서스캔', [
+        {val: fmt(cumTotals['문서스캔'].kwon), label:'권호수'},
+        {val: fmt(cumTotals['문서스캔'].gun),  label:'건'},
+        {val: fmt(cumTotals['문서스캔'].myun), label:'면'}
+      ], ' cm-sub-card')}
+      ${cmCard(PROCESS_COLORS['도면스캔'], '┗ 도면스캔', [
+        {val: fmt(cumTotals['도면스캔'].kwon), label:'권호수'},
+        {val: fmt(cumTotals['도면스캔'].gun),  label:'건'},
+        {val: fmt(cumTotals['도면스캔'].myun), label:'면'}
+      ], ' cm-sub-card')}
+    </div>
+  </div>`;
+
+  const CM_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
+  const cumMetrics = CM_ORDER.map(p => {
+    if (p === '__scan__') return scanBlock;
+    const ct = cumTotals[p];
+    const cols = p === '분류'
+      ? [{val:fmt(ct.labels),label:'권'},{val:fmt(ct.kwon),label:'권호수'},{val:fmt(ct.gun),label:'건'}]
+      : [{val:fmt(ct.kwon),label:'권호수'},{val:fmt(ct.gun),label:'건'},{val:fmt(ct.myun),label:'면'}];
+    return cmCard(PROCESS_COLORS[p], p, cols);
   }).join('');
 
   // Table header
@@ -785,7 +820,7 @@ function renderDailySummary(data, c) {
   c.innerHTML = `
     <div class="page-title">📋 일별 총괄표</div>
     <div class="section-header">누적 합계</div>
-    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">${cumMetrics}</div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);align-items:start">${cumMetrics}</div>
     <hr class="divider">
     <div class="section-header">일별 실적</div>
     <div class="card"><div class="scroll-x"><table class="ds-table">
