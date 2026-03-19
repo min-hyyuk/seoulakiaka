@@ -506,54 +506,66 @@ function renderProgressOverview(data, c) {
     return;
   }
 
-  // Completion counts
-  const total = allNums.length;
-  const procDone = {};
-  const stageCounts = {};
-  for (const p of PROCESSES) procDone[p] = 0;
+  // 목표 기준 누적 실적 가져오기
+  const cum = calcCumulative(data);
+  const tkwon = cum['분류'].tkwon || 0;   // 12,000권
+  const tmyun = cum['분류'].tmyun || 0;   // 1,250,000면
 
+  // 공정별 기준 및 실적값 정의
+  // 분류·재편철·공개구분: 권호수/12,000권
+  // 면표시·문서스캔·도면스캔·보정·색인: 면/125만면
+  function procMetric(p) {
+    const c = cum[p];
+    const kwonGroup = ['분류','재편철','공개구분'];
+    if (kwonGroup.includes(p)) return { done: c.cp, target: tkwon, unit: '권호수', tLabel: '권' };
+    return { done: c.cs, target: tmyun, unit: p === '색인' ? '건' : '면', tLabel: '면' };
+  }
+
+  // 스테이지 카운트는 레이블 기준 유지
+  const stageCounts = {};
   for (const num of allNums) {
     const ld = labels[num] || {};
     const stage = getLabelStage(ld);
     stageCounts[stage] = (stageCounts[stage]||0) + 1;
-    for (const p of PROCESSES) if (p in ld) procDone[p]++;
   }
 
-  // 스캔합계: 문서스캔 또는 도면스캔 중 하나라도 완료된 레이블 수
-  const scanDone = allNums.filter(n => (labels[n]||{})['문서스캔'] || (labels[n]||{})['도면스캔']).length;
-  const scanRate = total > 0 ? (scanDone/total*100).toFixed(1) : 0;
   const SCAN_COLOR_PO = '#805ad5';
 
-  function poCard(p, cnt) {
-    const rate = total > 0 ? (cnt/total*100).toFixed(1) : 0;
+  // 스캔합계: 문서스캔+도면스캔 면 합산
+  const scanDoneMyun = cum['문서스캔'].cs + cum['도면스캔'].cs;
+  const scanRate = tmyun > 0 ? (scanDoneMyun / tmyun * 100).toFixed(1) : 0;
+
+  function poCard(p) {
+    const m = procMetric(p);
+    const rate = m.target > 0 ? (m.done / m.target * 100).toFixed(1) : 0;
     return `<div class="scan-inline-item" style="--pc:${PROCESS_COLORS[p]}">
       <div class="metric-label" style="color:${PROCESS_COLORS[p]};font-size:12px;margin-bottom:4px">${p}</div>
-      <div style="font-size:16px;font-weight:700">${fmt(cnt)} <span style="font-size:11px;color:#718096">/ ${fmt(total)}</span></div>
-      <div style="font-size:11px;color:#718096;margin-top:2px">${rate}%</div>
+      <div style="font-size:16px;font-weight:700">${fmt(m.done)}<span style="font-size:10px;font-weight:400;color:#718096"> ${m.unit}</span></div>
+      <div style="font-size:11px;color:#718096;margin-top:2px">${rate}% / ${fmt(m.target)}${m.tLabel}</div>
     </div>`;
   }
 
   const scanBlock = `<div class="scan-cum-block" style="grid-column:span 2">
     <div class="scan-inline-item" style="--pc:${SCAN_COLOR_PO}">
       <div class="metric-label" style="color:${SCAN_COLOR_PO};font-size:13px;margin-bottom:4px">스캔합계</div>
-      <div style="font-size:18px;font-weight:700">${fmt(scanDone)} <span style="font-size:12px;color:#718096">/ ${fmt(total)}</span></div>
-      <div style="font-size:12px;color:#718096;margin-top:2px">${scanRate}%</div>
+      <div style="font-size:18px;font-weight:700">${fmt(scanDoneMyun)}<span style="font-size:10px;font-weight:400;color:#718096"> 면</span></div>
+      <div style="font-size:11px;color:#718096;margin-top:2px">${scanRate}% / ${fmt(tmyun)}면</div>
     </div>
     <div class="scan-inline-divider"></div>
-    ${poCard('문서스캔', procDone['문서스캔'])}
+    ${poCard('문서스캔')}
     <div class="scan-inline-divider"></div>
-    ${poCard('도면스캔', procDone['도면스캔'])}
+    ${poCard('도면스캔')}
   </div>`;
 
   const PO_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
   const metricHtml = PO_ORDER.map(p => {
     if (p === '__scan__') return scanBlock;
-    const cnt = procDone[p];
-    const rate = total > 0 ? (cnt/total*100).toFixed(1) : 0;
+    const m = procMetric(p);
+    const rate = m.target > 0 ? (m.done / m.target * 100).toFixed(1) : 0;
     return `<div class="metric-card">
       <div class="metric-label" style="color:${PROCESS_COLORS[p]}">${p}</div>
-      <div class="metric-value" style="font-size:18px">${fmt(cnt)} <span style="font-size:12px;color:#718096">/ ${fmt(total)}</span></div>
-      <div class="metric-delta">${rate}%</div>
+      <div class="metric-value" style="font-size:18px">${fmt(m.done)}<span style="font-size:12px;color:#718096;font-weight:400"> ${m.unit}</span></div>
+      <div class="metric-delta">${rate}% / ${fmt(m.target)}${m.tLabel}</div>
     </div>`;
   }).join('');
 
