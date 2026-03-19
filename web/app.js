@@ -915,7 +915,7 @@ function renderProcessSheet(data, c, proc) {
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="saveProcessEntries('${proc}')">💾 저장</button>
-        <span class="caption" style="align-self:center">💡 레이블 칸 또는 마지막 칸에서 Enter → 다음 행 자동 추가</span>
+        <span class="caption" style="align-self:center">💡 Enter → 다음 행 추가 · Tab / 방향키 → 같은 행 칸 이동</span>
       </div>
       <div id="inp-msg"></div>
     </div>
@@ -978,31 +978,25 @@ function addInputRow(proc, focusFirst) {
     row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   }
 
-  // ── Enter 키 핸들러 ──────────────────────────────────────────
+  // ── 키 핸들러 ──────────────────────────────────────────
   // text/number input (체크박스 제외) 목록
   const inputs = [...row.querySelectorAll('input[type="text"], input[type="number"]')];
   inputs.forEach((inp, idx) => {
     inp.addEventListener('keydown', e => {
-      if (e.key !== 'Enter') return;
-      e.preventDefault();
-      if (idx === 0) {
-        // 레이블 칸 → 새 행 추가 후 레이블 칸 포커스 (레이블 일괄 입력 지원)
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        // 어느 칸에서든 Enter → 새 행 레이블 칸으로 이동
         const newRow = addInputRow(proc, true);
         if (newRow) {
           const firstInp = newRow.querySelector('input');
           firstInp?.focus();
         }
-      } else if (idx < inputs.length - 1) {
-        // 중간 칸 → 같은 행 다음 칸으로 이동
-        inputs[idx + 1].focus();
-        inputs[idx + 1].select?.();
-      } else {
-        // 마지막 칸 → 새 행 추가 후 레이블 칸 포커스
-        const newRow = addInputRow(proc, true);
-        if (newRow) {
-          const firstInp = newRow.querySelector('input');
-          firstInp?.focus();
-        }
+      } else if (e.key === 'ArrowRight' && inp.selectionStart === inp.value.length) {
+        // 커서가 끝에 있을 때 → 다음 칸
+        if (idx < inputs.length - 1) { e.preventDefault(); inputs[idx + 1].focus(); inputs[idx + 1].select?.(); }
+      } else if (e.key === 'ArrowLeft' && inp.selectionStart === 0) {
+        // 커서가 처음에 있을 때 → 이전 칸
+        if (idx > 0) { e.preventDefault(); inputs[idx - 1].focus(); inputs[idx - 1].select?.(); }
       }
     });
   });
