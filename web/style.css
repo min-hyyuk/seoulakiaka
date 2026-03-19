@@ -738,7 +738,12 @@ textarea { resize: vertical; min-height: 80px; }
 .cm-sub-card {
   background: #faf8ff;
   border-left: 3px solid color-mix(in srgb, var(--pc,#ccc) 50%, transparent);
+  padding: 8px 10px;
 }
+.cm-sub-card .metric-label { font-size: 11px; margin-bottom: 4px; }
+.cm-sub-card .cm-hval      { font-size: 13px; }
+.cm-sub-card .cm-hlabel    { font-size: 9px; }
+.cm-sub-card .cm-hcol      { padding: 0 6px; min-width: 28px; }
 
 /* 수평 셀 레이아웃 */
 .ds-hrow {
