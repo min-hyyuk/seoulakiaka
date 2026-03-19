@@ -1350,16 +1350,16 @@ function renderWorkerStats(data, c) {
   const rows = [];
   for (const [, ld] of Object.entries(labels)) {
     const b = ld['분류'] || {};
-    const kwon = b.kwon || 1; const gun = b.gun || 0;
+    const bKwon = b.kwon || 1; const bGun = b.gun || 0;
     for (const proc of PROCESSES) {
       if (!(proc in ld)) continue;
       const e = ld[proc]; if (!e.date) continue;
-      let p, s;
-      if (proc==='분류') { p=e.kwon||0; s=e.gun||0; }
-      else if (['면표시','문서스캔','도면스캔','보정'].includes(proc)) { p=kwon; s=e.myun||0; }
-      else if (proc==='색인') { p=kwon; s=e.gun||0; }
-      else { p=kwon; s=gun; }
-      rows.push({ date:e.date, worker:e.worker||'', proc, p, s });
+      let kwon, qty;
+      if (proc==='분류') { kwon=e.kwon||0; qty=e.gun||0; }
+      else if (['면표시','문서스캔','도면스캔','보정'].includes(proc)) { kwon=bKwon; qty=e.myun||0; }
+      else if (proc==='색인') { kwon=bKwon; qty=e.gun||0; }
+      else { kwon=bKwon; qty=bGun; }
+      rows.push({ date:e.date, worker:e.worker||'', proc, kwon, qty });
     }
   }
 
@@ -1368,15 +1368,19 @@ function renderWorkerStats(data, c) {
     return;
   }
 
-  const dates = rows.map(r=>r.date).sort();
-  const minD = dates[0], maxD = dates[dates.length-1];
+  const allDates = rows.map(r=>r.date).sort();
+  const minD = allDates[0], maxD = allDates[allDates.length-1];
+  const procOpts = ['전체', ...PROCESSES].map(p => `<option value="${p}">${p}</option>`).join('');
 
   c.innerHTML = `
     <div class="page-title">👥 작업자별 현황</div>
     <div class="card">
-      <div class="form-row" style="grid-template-columns:180px 180px">
-        <div class="form-group"><label>시작일</label><input type="date" id="ws-start" value="${minD}" onchange="updateWorkerStats()"></div>
-        <div class="form-group"><label>종료일</label><input type="date" id="ws-end" value="${maxD}" onchange="updateWorkerStats()"></div>
+      <div class="filter-row">
+        <div class="filter-item"><label>공정</label>
+          <select id="ws-proc" onchange="updateWorkerStats()">${procOpts}</select>
+        </div>
+        <div class="filter-item"><label>시작일</label><input type="date" id="ws-start" value="${minD}" onchange="updateWorkerStats()"></div>
+        <div class="filter-item"><label>종료일</label><input type="date" id="ws-end" value="${maxD}" onchange="updateWorkerStats()"></div>
       </div>
     </div>
     <div id="ws-content"></div>
@@ -1386,80 +1390,146 @@ function renderWorkerStats(data, c) {
 }
 
 function updateWorkerStats() {
-  const rows  = window._wsRows || [];
-  const start = document.getElementById('ws-start')?.value || '';
-  const end   = document.getElementById('ws-end')?.value   || '';
-  const filtered = rows.filter(r => (!start || r.date >= start) && (!end || r.date <= end));
+  const rows   = window._wsRows || [];
+  const proc   = document.getElementById('ws-proc')?.value  || '전체';
+  const start  = document.getElementById('ws-start')?.value || '';
+  const end    = document.getElementById('ws-end')?.value   || '';
+
+  const filtered = rows.filter(r =>
+    (proc === '전체' || r.proc === proc) &&
+    (!start || r.date >= start) &&
+    (!end   || r.date <= end)
+  );
 
   if (!filtered.length) {
-    document.getElementById('ws-content').innerHTML = '<div class="alert alert-warning">선택 기간에 데이터가 없습니다.</div>';
+    document.getElementById('ws-content').innerHTML = '<div class="alert alert-warning">선택 조건에 데이터가 없습니다.</div>';
     return;
   }
 
-  // Pivot: worker x process -> secondary sum
   const workers = [...new Set(filtered.map(r=>r.worker).filter(Boolean))].sort();
-  const pivot = {};
-  for (const w of workers) pivot[w] = {};
-  for (const r of filtered) {
-    if (!r.worker) continue;
-    pivot[r.worker][r.proc] = (pivot[r.worker][r.proc]||0) + r.s;
-  }
 
-  let thead = '<tr><th>작업자</th>' + PROCESSES.map(p=>`<th>${p}</th>`).join('') + '<th>합계</th></tr>';
-  let tbody = workers.map(w => {
-    const cells = PROCESSES.map(p=>`<td>${fmt(pivot[w][p]||0)}</td>`).join('');
-    const total = PROCESSES.reduce((s,p) => s+(pivot[w][p]||0), 0);
-    return `<tr><td><span class="worker-chip">${esc(w)}</span></td>${cells}<td><strong>${fmt(total)}</strong></td></tr>`;
-  }).join('');
+  if (proc === '전체') {
+    // ── 전체: 공정×작업자 피벗 테이블 ──────────────────────────
+    const pivot = {};
+    for (const w of workers) pivot[w] = {};
+    for (const r of filtered) {
+      if (!r.worker) continue;
+      pivot[r.worker][r.proc] = (pivot[r.worker][r.proc]||0) + r.qty;
+    }
+    const thead = '<tr><th>작업자</th>' + PROCESSES.map(p=>`<th style="color:${PROCESS_COLORS[p]}">${p}</th>`).join('') + '</tr>';
+    const tbody = workers.map(w => {
+      const cells = PROCESSES.map(p=>`<td>${fmt(pivot[w][p]||0)}</td>`).join('');
+      return `<tr><td><span class="worker-chip">${esc(w)}</span></td>${cells}</tr>`;
+    }).join('');
 
-  // Worker daily avg
-  const workerDays = {};
-  const workerTotal = {};
-  for (const r of filtered) {
-    if (!r.worker) continue;
-    if (!workerDays[r.worker]) workerDays[r.worker] = new Set();
-    workerDays[r.worker].add(r.date);
-    workerTotal[r.worker] = (workerTotal[r.worker]||0) + r.s;
-  }
-  const avgRows = workers.map(w => {
-    const days = workerDays[w]?.size || 1;
-    const tot  = workerTotal[w] || 0;
-    return `<tr><td>${esc(w)}</td><td>${fmt(tot)}</td><td>${days}일</td><td>${(tot/days).toFixed(1)}</td></tr>`;
-  }).join('');
+    const datasets = PROCESSES.map(p => ({
+      label:p, data:workers.map(w=>pivot[w][p]||0),
+      backgroundColor:PROCESS_COLORS[p], stack:'a'
+    }));
 
-  // Chart data
-  const chartDatasets = PROCESSES.map(p => ({
-    label: p,
-    data: workers.map(w => pivot[w][p]||0),
-    backgroundColor: PROCESS_COLORS[p],
-    stack: 'a'
-  }));
+    document.getElementById('ws-content').innerHTML = `
+      <div class="card">
+        <div class="card-title">작업자별 공정별 실적 (수량 기준)</div>
+        <div class="table-wrap"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
+      </div>
+      <div class="card"><div class="chart-wrap chart-h300"><canvas id="ws-chart"></canvas></div></div>
+    `;
+    if (charts['ws-chart']) { charts['ws-chart'].destroy(); delete charts['ws-chart']; }
+    const ctx = document.getElementById('ws-chart');
+    if (ctx) charts['ws-chart'] = new Chart(ctx, {
+      type:'bar', data:{labels:workers, datasets},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'top'}}, scales:{x:{stacked:true},y:{stacked:true}}}
+    });
 
-  document.getElementById('ws-content').innerHTML = `
-    <div class="card">
-      <div class="card-title">작업자별 공정별 실적</div>
-      <div class="table-wrap"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
-    </div>
-    <div class="card">
-      <div class="chart-wrap chart-h300"><canvas id="ws-chart"></canvas></div>
-    </div>
-    <div class="card">
-      <div class="card-title">일평균 생산성</div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>작업자</th><th>총 수량</th><th>작업일수</th><th>일평균</th></tr></thead>
-        <tbody>${avgRows}</tbody>
-      </table></div>
-    </div>
-  `;
+  } else {
+    // ── 공정별: 작업자 단위 상세 ────────────────────────────────
+    const color  = PROCESS_COLORS[proc];
+    const isMyun = ['면표시','문서스캔','도면스캔','보정'].includes(proc);
+    const is분류  = proc === '분류';
+    const qtyLabel  = is분류 ? '건' : isMyun ? '면' : '건';
+    const kwonLabel = is분류 ? '권호수' : '권호수';
 
-  if (charts['ws-chart']) { charts['ws-chart'].destroy(); delete charts['ws-chart']; }
-  const ctx = document.getElementById('ws-chart');
-  if (ctx) {
-    charts['ws-chart'] = new Chart(ctx, {
-      type: 'bar',
-      data: { labels: workers, datasets: chartDatasets },
-      options: { responsive:true, maintainAspectRatio:false,
-        plugins:{legend:{position:'top'}}, scales:{x:{stacked:true},y:{stacked:true}} }
+    // 작업자별 집계
+    const wStats = {};
+    for (const r of filtered) {
+      if (!r.worker) continue;
+      if (!wStats[r.worker]) wStats[r.worker] = { kwon:0, qty:0, days:new Set() };
+      wStats[r.worker].kwon += r.kwon;
+      wStats[r.worker].qty  += r.qty;
+      wStats[r.worker].days.add(r.date);
+    }
+
+    const tbody = workers.map(w => {
+      const s = wStats[w];
+      const days = s.days.size;
+      const avgKwon = (s.kwon / days).toFixed(1);
+      const avgQty  = (s.qty  / days).toFixed(1);
+      return `<tr>
+        <td><span class="worker-chip" style="background:color-mix(in srgb,${color} 15%,#fff);color:${color}">${esc(w)}</span></td>
+        <td>${fmt(s.kwon)}</td><td>${(avgKwon)}/${kwonLabel}</td>
+        <td>${fmt(s.qty)}</td><td>${avgQty}/${qtyLabel}</td>
+        <td>${days}일</td>
+      </tr>`;
+    }).join('');
+
+    // 일별 합계 추이
+    const dailyMap = {};
+    for (const r of filtered) {
+      if (!r.worker) continue;
+      dailyMap[r.date] = (dailyMap[r.date]||0) + r.qty;
+    }
+    const dailyDates = Object.keys(dailyMap).sort();
+
+    document.getElementById('ws-content').innerHTML = `
+      <div class="card">
+        <div class="card-title" style="color:${color}">${proc} — 작업자별 실적</div>
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>작업자</th>
+            <th>${kwonLabel} 합계</th><th>일평균 ${kwonLabel}</th>
+            <th>${qtyLabel} 합계</th><th>일평균 ${qtyLabel}</th>
+            <th>작업일수</th>
+          </tr></thead>
+          <tbody>${tbody}</tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">작업자별 ${qtyLabel} 비교</div>
+        <div class="chart-wrap chart-h260"><canvas id="ws-chart"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">일별 ${qtyLabel} 추이 (전체)</div>
+        <div class="chart-wrap chart-h220"><canvas id="ws-chart2"></canvas></div>
+      </div>
+    `;
+
+    // 작업자별 바 차트
+    if (charts['ws-chart'])  { charts['ws-chart'].destroy();  delete charts['ws-chart']; }
+    if (charts['ws-chart2']) { charts['ws-chart2'].destroy(); delete charts['ws-chart2']; }
+
+    const ctx = document.getElementById('ws-chart');
+    if (ctx) charts['ws-chart'] = new Chart(ctx, {
+      type:'bar',
+      data:{ labels:workers,
+        datasets:[
+          {label:`${kwonLabel}`, data:workers.map(w=>wStats[w]?.kwon||0), backgroundColor:color+'99'},
+          {label:`${qtyLabel}`,  data:workers.map(w=>wStats[w]?.qty||0),  backgroundColor:color}
+        ]
+      },
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{position:'top'}}, scales:{y:{beginAtZero:true}}}
+    });
+
+    const ctx2 = document.getElementById('ws-chart2');
+    if (ctx2) charts['ws-chart2'] = new Chart(ctx2, {
+      type:'line',
+      data:{ labels:dailyDates,
+        datasets:[{label:`일별 ${qtyLabel}`, data:dailyDates.map(d=>dailyMap[d]||0),
+          borderColor:color, backgroundColor:color+'22', fill:true, tension:0.3}]
+      },
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false}}, scales:{y:{beginAtZero:true}}}
     });
   }
 }
