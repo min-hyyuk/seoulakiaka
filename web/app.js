@@ -672,22 +672,29 @@ function renderDailySummary(data, c) {
   }
 
   // Aggregate per day per process
-  const daily = {}; // { date: { proc: {kwon,gun,myun,workers} } }
+  // 분류: labels(레이블수), kwon(권호수 직접입력), gun(건 직접입력)
+  // 기타: kwon(권호수 from 분류), gun(건 from 분류), myun(면 from 공정입력)
+  const daily = {}; // { date: { proc: {labels,kwon,gun,myun,workers} } }
   for (const [, ld] of Object.entries(labels)) {
-    const b = ld['분류'] || {};
-    const kwon = b.kwon || 1;
-    const gun  = b.gun  || 0;
+    const b     = ld['분류'] || {};
+    const bKwon = b.kwon || 1;  // 분류에서 기록한 권호수
+    const bGun  = b.gun  || 0;  // 분류에서 기록한 건
     for (const proc of PROCESSES) {
       if (!(proc in ld)) continue;
       const e = ld[proc]; const d = e.date; if (!d) continue;
       if (!daily[d]) daily[d] = {};
-      if (!daily[d][proc]) daily[d][proc] = { kwon:0, gun:0, myun:0, workers:new Set() };
+      if (!daily[d][proc]) daily[d][proc] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set() };
       const pd = daily[d][proc];
       if (e.worker) pd.workers.add(e.worker);
-      if (proc==='분류') { pd.kwon += e.kwon||0; pd.gun += e.gun||0; }
-      else if (['면표시','문서스캔','도면스캔','보정'].includes(proc)) { pd.kwon += kwon; pd.myun += e.myun||0; }
-      else if (proc==='색인') { pd.kwon += kwon; pd.gun += e.gun||0; }
-      else { pd.kwon += kwon; pd.gun += gun; }
+      if (proc === '분류') {
+        pd.labels += 1;
+        pd.kwon   += e.kwon || 0;
+        pd.gun    += e.gun  || 0;
+      } else {
+        pd.kwon += bKwon;          // 권호수는 분류 데이터에서
+        pd.gun  += bGun;           // 건도 분류 데이터에서
+        pd.myun += e.myun || 0;    // 면은 공정 입력값
+      }
     }
   }
 
@@ -695,33 +702,37 @@ function renderDailySummary(data, c) {
 
   // Cumulative totals
   const cumTotals = {};
-  for (const p of PROCESSES) cumTotals[p] = {kwon:0,gun:0,myun:0};
+  for (const p of PROCESSES) cumTotals[p] = { labels:0, kwon:0, gun:0, myun:0 };
   for (const d of dates)
     for (const p of PROCESSES) if (daily[d][p]) {
-      cumTotals[p].kwon += daily[d][p].kwon;
-      cumTotals[p].gun  += daily[d][p].gun;
-      cumTotals[p].myun += daily[d][p].myun;
+      cumTotals[p].labels += daily[d][p].labels;
+      cumTotals[p].kwon   += daily[d][p].kwon;
+      cumTotals[p].gun    += daily[d][p].gun;
+      cumTotals[p].myun   += daily[d][p].myun;
     }
 
   const cumMetrics = PROCESSES.map(p => {
     const ct = cumTotals[p];
-    const main = (['분류','색인'].includes(p)||AUTO_PROCS.includes(p)) ? `${fmt(ct.kwon)}권` : `${fmt(ct.kwon)}권`;
-    const sub  = (['분류','색인'].includes(p)||AUTO_PROCS.includes(p)) ? `${fmt(ct.gun)}건` : `${fmt(ct.myun)}면`;
+    let lines = '';
+    if (p === '분류') {
+      lines = `<div class="metric-value" style="font-size:15px">${fmt(ct.labels)}권</div>
+               <div class="metric-delta">${fmt(ct.kwon)}권호수 · ${fmt(ct.gun)}건</div>`;
+    } else {
+      lines = `<div class="metric-value" style="font-size:15px">${fmt(ct.kwon)}권호수</div>
+               <div class="metric-delta">${fmt(ct.gun)}건 · ${fmt(ct.myun)}면</div>`;
+    }
     return `<div class="metric-card">
       <div class="metric-label" style="color:${PROCESS_COLORS[p]}">${p}</div>
-      <div class="metric-value" style="font-size:16px">${main}</div>
-      <div class="metric-delta">${sub}</div>
+      ${lines}
     </div>`;
   }).join('');
 
-  // Table rows
-  // ── 깔끔한 단일 열 테이블 (공정 1개 = 1열) ──────────────────
-  // ── 깔끔한 단일 열 테이블 (공정 1개 = 1열) ──────────────────
+  // Table header
   const theadCells = PROCESSES.map(p => {
-    const unitSub = (['분류','색인'].includes(p)||AUTO_PROCS.includes(p)) ? '권 / 건' : '권 / 면';
+    const unitLabel = p === '분류' ? '권 / 권호수 / 건 / 인원' : '권호수 / 건 / 면 / 인원';
     return `<th class="ds-proc-head" style="--pc:${PROCESS_COLORS[p]}">
       <span class="ds-proc-name">${p}</span>
-      <span class="ds-proc-unit">${unitSub} · 인원</span>
+      <span class="ds-proc-unit">${unitLabel}</span>
     </th>`;
   }).join('');
 
@@ -731,14 +742,29 @@ function renderDailySummary(data, c) {
       const pd = row[p];
       if (!pd) return `<td class="ds-cell ds-empty"></td>`;
       const wCnt = [...pd.workers].filter(Boolean).length;
-      let main = '', sub = '';
-      if (p==='분류') { main=`${fmt(pd.kwon)}권`; sub=`${fmt(pd.gun)}건`; }
-      else if (['면표시','문서스캔','도면스캔','보정'].includes(p)) { main=`${fmt(pd.kwon)}권`; sub=`${fmt(pd.myun)}면`; }
-      else { main=`${fmt(pd.kwon)}권`; sub=`${fmt(pd.gun)}건`; }
+      let cols = [];
+      if (p === '분류') {
+        cols = [
+          { val: fmt(pd.labels), label: '권' },
+          { val: fmt(pd.kwon),   label: '권호수' },
+          { val: fmt(pd.gun),    label: '건' },
+          { val: wCnt || '-',    label: '명' },
+        ];
+      } else {
+        cols = [
+          { val: fmt(pd.kwon),  label: '권호수' },
+          { val: fmt(pd.gun),   label: '건' },
+          { val: fmt(pd.myun),  label: '면' },
+          { val: wCnt || '-',   label: '명' },
+        ];
+      }
+      const colsHtml = cols.map(({val, label}) => `
+        <div class="ds-hcol">
+          <div class="ds-hval">${val}</div>
+          <div class="ds-hlabel">${label}</div>
+        </div>`).join('');
       return `<td class="ds-cell" style="--pc:${PROCESS_COLORS[p]}">
-        <div class="ds-main">${main}</div>
-        <div class="ds-sub">${sub}</div>
-        ${wCnt ? `<div class="ds-cnt">👤 ${wCnt}명</div>` : ''}
+        <div class="ds-hrow">${colsHtml}</div>
       </td>`;
     }).join('');
     return `<tr><td class="ds-date"><strong>${d}</strong></td>${cells}</tr>`;
