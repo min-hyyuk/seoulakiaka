@@ -581,7 +581,9 @@ textarea { resize: vertical; min-height: 80px; }
 
 /* Scan hierarchy table rows */
 .scan-parent-row td { background: #f5f0ff !important; font-weight: 600; }
+.scan-parent-row:hover td { background: #ede8ff !important; }
 .scan-child-row td { background: #faf8ff !important; font-size: 13px; }
+.scan-toggle-icon { font-size:11px; margin-left:4px; opacity:.7; }
 
 /* 공정별 상세 현황 테이블 */
 .detail-tbl { width: 100%; table-layout: fixed; }

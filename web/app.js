@@ -419,9 +419,9 @@ function renderDashboard(data, c) {
     if (proc === '__scan__') {
       const scanRemSFmt = `${fmt(scanRemS)}면`;
       const scanDetailChips = detailChips('문서스캔').replace(/권호수|면/g, s=>s) && `<span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanCS)}면</span>`;
-      // Parent: 스캔합계
-      tRows += `<tr class="scan-parent-row">
-        <td><span style="color:${SCAN_COLOR};font-weight:700">스캔합계</span></td>
+      // Parent: 스캔합계 (클릭 시 자식 행 토글)
+      tRows += `<tr class="scan-parent-row" onclick="toggleScanChildren(this)" style="cursor:pointer">
+        <td><span style="color:${SCAN_COLOR};font-weight:700">스캔합계 <span class="scan-toggle-icon">▾</span></span></td>
         <td>${fmt(scanTK)}</td>
         <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div><span class="dt-bar-pct">${scanRP}%</span></div></td>
         <td>${scanRemSFmt}</td>
@@ -429,7 +429,6 @@ function renderDashboard(data, c) {
       </tr>`;
       // Children: 실적만, 공정율·잔여 없음
       for (const sub of ['문서스캔','도면스캔']) {
-        const isLast = sub === '도면스캔';
         tRows += `<tr class="scan-child-row">
           <td><span style="color:${PROCESS_COLORS[sub]};padding-left:14px">${sub}</span></td>
           <td></td>
@@ -2465,6 +2464,18 @@ window.confirmOk = confirmOk;
 window.confirmCancel = confirmCancel;
 window.closeEditModal = closeEditModal;
 window.loadData = loadData;
+function toggleScanChildren(parentRow) {
+  let row = parentRow.nextElementSibling;
+  let hidden = null;
+  while (row && row.classList.contains('scan-child-row')) {
+    if (hidden === null) hidden = row.style.display !== 'none';
+    row.style.display = hidden ? 'none' : '';
+    row = row.nextElementSibling;
+  }
+  const icon = parentRow.querySelector('.scan-toggle-icon');
+  if (icon) icon.textContent = hidden ? '▸' : '▾';
+}
+window.toggleScanChildren = toggleScanChildren;
 window.showColFilter = showColFilter;
 window.cfdSearch = cfdSearch;
 window.cfdToggleAll = cfdToggleAll;
