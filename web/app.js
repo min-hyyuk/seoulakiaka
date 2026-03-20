@@ -293,6 +293,47 @@ function renderDashboard(data, c) {
   const scanRP = scanTK > 0 ? Math.round(scanCP / scanTK * 1000) / 10 : 0;
   const scanRemP = Math.max(0, scanTK - scanCP);
 
+  // 전날 대비 delta — 가장 최근 작업일 이전 누적 공정율 계산
+  const sortedDates = [...allDates].sort();
+  const latestDate = sortedDates[sortedDates.length - 1] || '';
+  const cumPrev = (() => {
+    const tkwon = (data.targets||{}).target_kwon || 0;
+    const tmyun = (data.targets||{}).target_myun || 0;
+    const res = {};
+    for (const proc of PROCESSES) {
+      let cp = 0, cs = 0;
+      for (const [, ld] of Object.entries(labels)) {
+        if (!(proc in ld)) continue;
+        const e = ld[proc];
+        if (latestDate && e.date === latestDate) continue;
+        const b = ld['분류'] || {};
+        const kwon = b.kwon || 1; const gun = b.gun || 0;
+        if (proc === '분류') { cp += e.kwon||0; cs += e.gun||0; }
+        else if (['면표시','문서스캔','도면스캔','보정'].includes(proc)) { cp += kwon; cs += e.myun||0; }
+        else if (proc === '색인') { cp += kwon; cs += e.gun||0; }
+        else { cp += kwon; cs += gun; }
+      }
+      res[proc] = {
+        rp: tkwon > 0 ? Math.round(cp/tkwon*1000)/10 : 0,
+        rs: tmyun > 0 ? Math.round(cs/tmyun*1000)/10 : 0
+      };
+    }
+    return res;
+  })();
+  const scanCPPrev = (() => {
+    let cp = 0;
+    for (const sub of ['문서스캔','도면스캔']) {
+      for (const [, ld] of Object.entries(labels)) {
+        if (!(sub in ld)) continue;
+        const e = ld[sub];
+        if (latestDate && e.date === latestDate) continue;
+        cp += (ld['분류']?.kwon || 1);
+      }
+    }
+    return cp;
+  })();
+  const scanRPPrev = scanTK > 0 ? Math.round(scanCPPrev / scanTK * 1000) / 10 : 0;
+
   // avgRate uses 7 logical units (스캔합계 replaces 문서스캔+도면스캔)
   const rates = [...PROCESSES.filter(p => p !== '문서스캔' && p !== '도면스캔').map(p => cum[p].rp), scanRP];
   const avgRate = rates.reduce((a,b) => a+b, 0) / rates.length;
@@ -310,8 +351,8 @@ function renderDashboard(data, c) {
   for (const proc of GAUGE_ORDER) {
     if (proc === '__scan__') {
       const ms = cum['문서스캔'], ds = cum['도면스캔'];
-      const scanDelta = (scanRP - ti.rate).toFixed(1);
-      const scanDColor = scanRP >= ti.rate ? '#38a169' : '#e53e3e';
+      const scanDelta = (scanRP - scanRPPrev).toFixed(1);
+      const scanDColor = Number(scanDelta) > 0 ? '#38a169' : Number(scanDelta) < 0 ? '#e53e3e' : '#888';
       gaugeHtml += `
       <div class="gauge-card gauge-card-scan">
         <div class="gauge-name" style="color:${SCAN_COLOR}">스캔합계</div>
@@ -319,7 +360,7 @@ function renderDashboard(data, c) {
           <canvas id="g-스캔합계" style="max-height:90px"></canvas>
           <div class="gauge-overlay">
             <span class="gauge-pct">${scanRP}%</span>
-            <span class="gauge-delta-txt" style="color:${scanDColor}">&nbsp;${Number(scanDelta)>=0?'+':''}${scanDelta}%p</span>
+            <span class="gauge-delta-txt" style="color:${scanDColor}">&nbsp;전일 ${Number(scanDelta)>=0?'+':''}${scanDelta}%p</span>
           </div>
         </div>
         <div class="gauge-caption">${fmt(scanCP)}권 / ${fmt(scanCS)}면<br>잔여: ${fmt(scanRemS)}면</div>
@@ -331,8 +372,8 @@ function renderDashboard(data, c) {
     } else {
       const cv = cum[proc];
       const up = PROCESS_UNITS[proc];
-      const delta = (cv.rp - ti.rate).toFixed(1);
-      const dColor = cv.rp >= ti.rate ? '#38a169' : '#e53e3e';
+      const delta = (cv.rp - (cumPrev[proc]?.rp ?? 0)).toFixed(1);
+      const dColor = Number(delta) > 0 ? '#38a169' : Number(delta) < 0 ? '#e53e3e' : '#888';
       gaugeHtml += `
       <div class="gauge-card">
         <div class="gauge-name" style="color:${PROCESS_COLORS[proc]}">${proc}</div>
@@ -340,7 +381,7 @@ function renderDashboard(data, c) {
           <canvas id="g-${proc}" style="max-height:90px"></canvas>
           <div class="gauge-overlay">
             <span class="gauge-pct">${cv.rp}%</span>
-            <span class="gauge-delta-txt" style="color:${dColor}">&nbsp;${Number(delta)>=0?'+':''}${delta}%p</span>
+            <span class="gauge-delta-txt" style="color:${dColor}">&nbsp;전일 ${Number(delta)>=0?'+':''}${delta}%p</span>
           </div>
         </div>
         <div class="gauge-caption">${fmt(cv.cp)}${up.p} / ${fmt(cv.cs)}${up.s}<br>잔여: ${['면표시','보정'].includes(proc) ? fmt(cv.remS)+'면' : fmt(cv.remP)+'권'}</div>
