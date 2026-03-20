@@ -190,6 +190,7 @@ function renderSidebar() {
   const pages = [
     { icon:'📈', name:'대시보드' },
     { icon:'📋', name:'공정진행표' },
+    { icon:'📅', name:'일별 총괄표' },
     { icon:'👥', name:'작업자별 현황' },
     { icon:'🔍', name:'품질검사' },
     { icon:'⚙️', name:'설정' },
@@ -201,7 +202,7 @@ function renderSidebar() {
     html += `<div class="nav-item ${a}" onclick="navigate('${p.name}')">${p.icon} ${p.name}</div>`;
     if (p.name === '공정진행표' && state.page === '공정진행표') {
       html += '<div class="nav-sub">';
-      for (const sub of ['전체 현황','일별 총괄표',...PROCESSES]) {
+      for (const sub of ['전체 현황',...PROCESSES]) {
         const sa = state.sub === sub ? 'active' : '';
         html += `<div class="nav-item ${sa}" onclick="navigate('공정진행표','${sub}')">${sub}</div>`;
       }
@@ -219,10 +220,10 @@ function renderContent() {
     case '대시보드':       renderDashboard(data, c); break;
     case '공정진행표':
       if (!state.sub) { state.sub = '전체 현황'; renderSidebar(); }
-      if      (state.sub === '전체 현황')  renderProgressOverview(data, c);
-      else if (state.sub === '일별 총괄표') renderDailySummary(data, c);
-      else                                 renderProcessSheet(data, c, state.sub);
+      if (state.sub === '전체 현황') renderProgressOverview(data, c);
+      else                           renderProcessSheet(data, c, state.sub);
       break;
+    case '일별 총괄표': renderDailySummary(data, c); break;
     case '작업자별 현황': renderWorkerStats(data, c); break;
     case '품질검사':      renderQuality(data, c); break;
     case '설정':          renderSettings(data, c); break;
