@@ -696,12 +696,12 @@ function applyProgressFilter() {
   }
 
   let tableHtml = `<div class="caption mb-8">총 ${fmt(rows.length)}건</div>
-    <div class="scroll-table-wrap"><table>
+    <div class="scroll-table-wrap"><table id="progress-tbl">
     <thead><tr>
-      <th>반입회차</th><th>상자번호</th><th>레이블번호</th><th>현재공정</th><th>도면유형</th>
-      <th>분권수</th><th>건수(분류)</th><th>건수(색인)</th>
-      <th>면수(면표시)</th><th>면수(스캔)</th><th>면수(보정)</th>
-      ${PROCESSES.map(p=>`<th>${p}</th>`).join('')}
+      <th class="th-cf" onclick="showColFilter(this,'progress-tbl',0)">반입회차<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',1)">상자번호<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',2)">레이블번호<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',3)">현재공정<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',4)">도면유형<span class="th-cf-icon">▼</span></th>
+      <th class="th-cf" onclick="showColFilter(this,'progress-tbl',5)">분권수<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',6)">건수(분류)<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',7)">건수(색인)<span class="th-cf-icon">▼</span></th>
+      <th class="th-cf" onclick="showColFilter(this,'progress-tbl',8)">면수(면표시)<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',9)">면수(스캔)<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'progress-tbl',10)">면수(보정)<span class="th-cf-icon">▼</span></th>
+      ${PROCESSES.map((p,i)=>`<th class="th-cf" onclick="showColFilter(this,'progress-tbl',${11+i})">${p}<span class="th-cf-icon">▼</span></th>`).join('')}
     </tr></thead><tbody>`;
 
   for (const r of rows) {
@@ -718,6 +718,8 @@ function applyProgressFilter() {
   tableHtml += '</tbody></table></div>';
 
   document.getElementById('progress-table-area').innerHTML = tableHtml;
+  applyAllColFilters('progress-tbl');
+  updateCFIndicators('progress-tbl');
 }
 
 function setProgressPage(pg) {
@@ -1131,6 +1133,7 @@ function saveProcessEntries(proc) {
 }
 
 function renderHistTable(proc) {
+  Object.keys(window._colFilters||{}).filter(k=>k.startsWith('hist-tbl:')).forEach(k=>delete window._colFilters[k]);
   const area = document.getElementById('hist-table-area'); if (!area) return;
   const data     = loadData();
   const fWorker  = document.getElementById('hw')?.value || '전체';
@@ -1198,12 +1201,15 @@ function renderHistTable(proc) {
     <div class="table-wrap"><table id="hist-tbl">
       <thead><tr>
         <th style="width:32px"><input type="checkbox" onchange="toggleHistAll(this)"></th>
-        <th>레이블</th><th>작업일</th><th>작업자</th>${extraTh}<th>비고</th>
+        <th class="th-cf" onclick="showColFilter(this,'hist-tbl',1)">레이블<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'hist-tbl',2)">작업일<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'hist-tbl',3)">작업자<span class="th-cf-icon">▼</span></th>${extraTh}<th class="th-cf" onclick="showColFilter(this,'hist-tbl',this.cellIndex)">비고<span class="th-cf-icon">▼</span></th>
       </tr></thead>
       <tbody>${tbody}</tbody>
     </table></div>
     <div class="btn-row"><button class="btn btn-danger btn-sm" onclick="deleteSelected('${esc(proc)}')">🗑️ 선택 삭제</button></div>
   `;
+
+  applyAllColFilters('hist-tbl');
+  updateCFIndicators('hist-tbl');
 
   // ── 이벤트 바인딩 ────────────────────────────────────────────
   const tbl = document.getElementById('hist-tbl');
@@ -2313,6 +2319,112 @@ function init() {
   }
 }
 
+// ============================================================
+// 컬럼 헤더 드롭다운 필터
+// ============================================================
+if (!window._colFilters) window._colFilters = {};
+
+function showColFilter(th, tableId, colIdx) {
+  document.querySelectorAll('.col-filter-dropdown').forEach(d => d.remove());
+  const table = document.getElementById(tableId);
+  if (!table) return;
+
+  const vals = new Set();
+  for (const row of table.tBodies[0]?.rows || []) {
+    const cell = row.cells[colIdx];
+    vals.add((cell?.textContent.trim()) || '(비어있음)');
+  }
+
+  const key = `${tableId}:${colIdx}`;
+  const active = window._colFilters[key];
+  const items = [...vals].sort();
+
+  const div = document.createElement('div');
+  div.className = 'col-filter-dropdown';
+  div.innerHTML = `
+    <div class="cfd-search"><input type="text" placeholder="검색..." oninput="cfdSearch(this)"></div>
+    <div class="cfd-items">
+      <label class="cfd-item cfd-all-item">
+        <input type="checkbox" id="cfd-all-chk" ${!active ? 'checked' : ''} onchange="cfdToggleAll(this)">
+        <span><strong>전체 선택</strong></span>
+      </label>
+      <hr class="cfd-divider">
+      ${items.map(v => `<label class="cfd-item"><input type="checkbox" class="cfd-val" value="${v.replace(/"/g,'&quot;')}" ${!active || active.has(v) ? 'checked' : ''}> <span>${v}</span></label>`).join('')}
+    </div>
+    <div class="cfd-btns">
+      <button class="cfd-apply" onclick="applyCFD('${tableId}',${colIdx},this.closest('.col-filter-dropdown'))">적용</button>
+      <button onclick="clearCFD('${tableId}',${colIdx})">초기화</button>
+    </div>
+  `;
+
+  const rect = th.getBoundingClientRect();
+  div.style.top = (rect.bottom + 2) + 'px';
+  div.style.left = Math.min(rect.left, window.innerWidth - 270) + 'px';
+  document.body.appendChild(div);
+  div.querySelector('.cfd-search input')?.focus();
+
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!div.contains(e.target) && !th.contains(e.target)) {
+        div.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 10);
+}
+
+function cfdSearch(input) {
+  const q = input.value.toLowerCase();
+  input.closest('.col-filter-dropdown').querySelectorAll('.cfd-val').forEach(chk => {
+    chk.closest('.cfd-item').style.display = chk.value.toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function cfdToggleAll(chk) {
+  chk.closest('.col-filter-dropdown').querySelectorAll('.cfd-val').forEach(c => c.checked = chk.checked);
+}
+
+function applyCFD(tableId, colIdx, dropdown) {
+  const key = `${tableId}:${colIdx}`;
+  const allVals = [...dropdown.querySelectorAll('.cfd-val')];
+  const checked = allVals.filter(c => c.checked).map(c => c.value);
+  if (checked.length === allVals.length) delete window._colFilters[key];
+  else window._colFilters[key] = new Set(checked);
+  dropdown.remove();
+  applyAllColFilters(tableId);
+  updateCFIndicators(tableId);
+}
+
+function clearCFD(tableId, colIdx) {
+  delete window._colFilters[`${tableId}:${colIdx}`];
+  document.querySelectorAll('.col-filter-dropdown').forEach(d => d.remove());
+  applyAllColFilters(tableId);
+  updateCFIndicators(tableId);
+}
+
+function applyAllColFilters(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const filters = Object.entries(window._colFilters)
+    .filter(([k]) => k.startsWith(tableId + ':'))
+    .map(([k, v]) => [parseInt(k.split(':')[1]), v]);
+  for (const row of table.tBodies[0]?.rows || []) {
+    let show = true;
+    for (const [ci, allowed] of filters) {
+      const txt = (row.cells[ci]?.textContent.trim()) || '(비어있음)';
+      if (!allowed.has(txt)) { show = false; break; }
+    }
+    row.style.display = show ? '' : 'none';
+  }
+}
+
+function updateCFIndicators(tableId) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const ths = [...(table.tHead?.rows[0]?.cells || [])];
+  ths.forEach((th, i) => th.classList.toggle('cf-active', !!(window._colFilters[`${tableId}:${i}`])));
+}
+
 // Expose to window for inline handlers
 window.navigate = navigate;
 window.switchDashTab = switchDashTab;
@@ -2353,5 +2465,12 @@ window.confirmOk = confirmOk;
 window.confirmCancel = confirmCancel;
 window.closeEditModal = closeEditModal;
 window.loadData = loadData;
+window.showColFilter = showColFilter;
+window.cfdSearch = cfdSearch;
+window.cfdToggleAll = cfdToggleAll;
+window.applyCFD = applyCFD;
+window.clearCFD = clearCFD;
+window.applyAllColFilters = applyAllColFilters;
+window.updateCFIndicators = updateCFIndicators;
 
 init();
