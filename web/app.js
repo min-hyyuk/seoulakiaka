@@ -322,7 +322,7 @@ function renderDashboard(data, c) {
             <span class="gauge-delta-txt" style="color:${scanDColor}">&nbsp;${Number(scanDelta)>=0?'+':''}${scanDelta}%p</span>
           </div>
         </div>
-        <div class="gauge-caption">${fmt(scanCP)}권 / ${fmt(scanCS)}면<br>잔여: ${fmt(scanRemP)}권</div>
+        <div class="gauge-caption">${fmt(scanCP)}권 / ${fmt(scanCS)}면<br>잔여: ${fmt(scanRemS)}면</div>
         <div class="scan-sub-row">
           <span class="scan-sub-item"><span class="scan-sub-label">문서</span>${fmt(ms.cp)}권 ${ms.rp}%</span>
           <span class="scan-sub-item"><span class="scan-sub-label">도면</span>${fmt(ds.cp)}권 ${ds.rp}%</span>
@@ -343,7 +343,7 @@ function renderDashboard(data, c) {
             <span class="gauge-delta-txt" style="color:${dColor}">&nbsp;${Number(delta)>=0?'+':''}${delta}%p</span>
           </div>
         </div>
-        <div class="gauge-caption">${fmt(cv.cp)}${up.p} / ${fmt(cv.cs)}${up.s}<br>잔여: ${fmt(cv.remP)}${up.p}</div>
+        <div class="gauge-caption">${fmt(cv.cp)}${up.p} / ${fmt(cv.cs)}${up.s}<br>잔여: ${['면표시','보정'].includes(proc) ? fmt(cv.remS)+'면' : fmt(cv.remP)+'권'}</div>
       </div>`;
     }
   }
