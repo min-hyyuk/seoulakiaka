@@ -1469,6 +1469,13 @@ function renderWorkerStats(data, c) {
         </div>
         <div class="filter-item"><label>시작일</label><input type="date" id="ws-start" value="${minD}" onchange="updateWorkerStats()"></div>
         <div class="filter-item"><label>종료일</label><input type="date" id="ws-end" value="${maxD}" onchange="updateWorkerStats()"></div>
+        <div class="filter-item"><label>정렬</label>
+          <select id="ws-sort" onchange="updateWorkerStats()">
+            <option value="name">이름순</option>
+            <option value="desc">작업량 많은순</option>
+            <option value="asc">작업량 적은순</option>
+          </select>
+        </div>
       </div>
     </div>
     <div id="ws-content"></div>
@@ -1494,18 +1501,23 @@ function updateWorkerStats() {
     return;
   }
 
-  const workers = [...new Set(filtered.map(r=>r.worker).filter(Boolean))].sort();
+  const sort = document.getElementById('ws-sort')?.value || 'name';
+  const workersBase = [...new Set(filtered.map(r=>r.worker).filter(Boolean))].sort();
 
   if (proc === '전체') {
     // ── 전체: 공정×작업자 피벗 테이블 ──────────────────────────
     const pivot = {};
-    for (const w of workers) pivot[w] = {};
+    for (const w of workersBase) pivot[w] = {};
     for (const r of filtered) {
       if (!r.worker) continue;
       pivot[r.worker][r.proc]       = (pivot[r.worker][r.proc]||0)       + r.qty;
       if (r.proc === '분류')
         pivot[r.worker]['분류_kwon'] = (pivot[r.worker]['분류_kwon']||0) + r.kwon;
     }
+    const totalQty = w => PROCESSES.reduce((s,p) => s + (pivot[w][p]||0), 0);
+    const workers = sort === 'desc' ? [...workersBase].sort((a,b) => totalQty(b)-totalQty(a))
+                  : sort === 'asc'  ? [...workersBase].sort((a,b) => totalQty(a)-totalQty(b))
+                  : workersBase;
 
     // 헤더: 분류는 권호수·건 두 컬럼
     const theadCols = PROCESSES.map(p =>
@@ -1560,6 +1572,9 @@ function updateWorkerStats() {
       wStats[r.worker].qty  += r.qty;
       wStats[r.worker].days.add(r.date);
     }
+    const workers = sort === 'desc' ? [...workersBase].sort((a,b) => (wStats[b]?.qty||0)-(wStats[a]?.qty||0))
+                  : sort === 'asc'  ? [...workersBase].sort((a,b) => (wStats[a]?.qty||0)-(wStats[b]?.qty||0))
+                  : workersBase;
 
     const tbody = workers.map(w => {
       const s = wStats[w];
