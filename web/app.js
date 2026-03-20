@@ -678,7 +678,10 @@ function applyProgressFilter() {
         const d = ld[p].date || '';
         let disp = 'O';
         if (d) { try { disp = d.slice(5); } catch(e){} }
-        return `<td style="color:#38a169;text-align:center">${disp}</td>`;
+        let extra = '';
+        if ((p === '문서스캔' || p === '도면스캔') && ld[p].domyun_type)
+          extra = `<br><span style="font-size:10px;color:#805ad5;font-weight:600">${esc(ld[p].domyun_type)}</span>`;
+        return `<td style="color:#38a169;text-align:center">${disp}${extra}</td>`;
       }
       return '<td></td>';
     }).join('');
