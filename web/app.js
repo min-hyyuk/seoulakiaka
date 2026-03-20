@@ -324,8 +324,8 @@ function renderDashboard(data, c) {
         </div>
         <div class="gauge-caption">${fmt(scanCP)}권 / ${fmt(scanCS)}면<br>잔여: ${fmt(scanRemS)}면</div>
         <div class="scan-sub-row">
-          <span class="scan-sub-item"><span class="scan-sub-label">문서</span>${fmt(ms.cp)}권 ${ms.rp}%</span>
-          <span class="scan-sub-item"><span class="scan-sub-label">도면</span>${fmt(ds.cp)}권 ${ds.rp}%</span>
+          <span class="scan-sub-item"><span class="scan-sub-label">문서</span>${fmt(ms.cs)}면 ${ms.rs}%</span>
+          <span class="scan-sub-item"><span class="scan-sub-label">도면</span>${fmt(ds.cs)}면 ${ds.rs}%</span>
         </div>
       </div>`;
     } else {
