@@ -433,7 +433,7 @@ function renderDashboard(data, c) {
       // Parent: 스캔합계 (클릭 시 자식 행 토글)
       tRows += `<tr class="scan-parent-row" onclick="toggleScanChildren(this)" style="cursor:pointer">
         <td><span style="color:${SCAN_COLOR};font-weight:700">스캔합계 <span class="scan-toggle-icon">▾</span></span></td>
-        <td>${fmt(scanTK)}</td>
+        <td>${fmt(cum['문서스캔'].tmyun)}면</td>
         <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div><span class="dt-bar-pct">${scanRP}%</span></div></td>
         <td>${scanRemSFmt}</td>
         <td><span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanGun)}건</span><span class="detail-chip">${fmt(scanCS)}면</span></td>
@@ -452,7 +452,7 @@ function renderDashboard(data, c) {
       const cv = cum[proc];
       tRows += `<tr>
         <td><span style="color:${PROCESS_COLORS[proc]};font-weight:600">${proc}</span></td>
-        <td>${fmt(cv.tkwon)}</td>
+        <td>${['면표시','보정'].includes(proc) ? fmt(cv.tmyun)+'면' : fmt(cv.tkwon)+'권'}</td>
         <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(cv.rp,100)}%;background:${PROCESS_COLORS[proc]}"></div></div><span class="dt-bar-pct">${cv.rp}%</span></div></td>
         <td>${remCell(proc, cv)}</td>
         <td>${detailChips(proc)}</td>
@@ -483,7 +483,7 @@ function renderDashboard(data, c) {
         <col style="width:15%">
         <col style="width:26%">
       </colgroup>
-      <thead><tr><th>공정</th><th>목표(권)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
+      <thead><tr><th>공정</th><th>목표(권/면)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
     ${hasData ? `
