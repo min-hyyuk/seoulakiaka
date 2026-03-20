@@ -1498,15 +1498,9 @@ function updateWorkerStats() {
         <div class="card-title">작업자별 공정별 실적 (수량 기준)</div>
         <div class="table-wrap"><table><thead>${thead}</thead><tbody>${tbody}</tbody></table></div>
       </div>
-      <div class="card"><div class="chart-wrap chart-h300"><canvas id="ws-chart"></canvas></div></div>
     `;
-    if (charts['ws-chart']) { charts['ws-chart'].destroy(); delete charts['ws-chart']; }
-    const ctx = document.getElementById('ws-chart');
-    if (ctx) charts['ws-chart'] = new Chart(ctx, {
-      type:'bar', data:{labels:workers, datasets},
-      options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{position:'top'}}, scales:{x:{stacked:true},y:{stacked:true}}}
-    });
+    if (charts['ws-chart'])  { charts['ws-chart'].destroy();  delete charts['ws-chart']; }
+    if (charts['ws-chart2']) { charts['ws-chart2'].destroy(); delete charts['ws-chart2']; }
 
   } else {
     // ── 공정별: 작업자 단위 상세 ────────────────────────────────
