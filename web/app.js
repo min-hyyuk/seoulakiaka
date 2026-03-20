@@ -389,7 +389,7 @@ function renderDashboard(data, c) {
       for (const sub of ['문서스캔','도면스캔']) {
         const isLast = sub === '도면스캔';
         tRows += `<tr class="scan-child-row">
-          <td><span style="color:${PROCESS_COLORS[sub]};padding-left:14px">${isLast?'┗':'┣'} ${sub}</span></td>
+          <td><span style="color:${PROCESS_COLORS[sub]};padding-left:14px">${sub}</span></td>
           <td></td>
           <td></td>
           <td style="text-align:center">—</td>
@@ -797,13 +797,13 @@ function renderDailySummary(data, c) {
       {val: fmt(scanCumMyun), label:'면'}
     ])}
     <div class="scan-inline-divider"></div>
-    ${cmInlineCard(PROCESS_COLORS['문서스캔'], '┣ 문서스캔', [
+    ${cmInlineCard(PROCESS_COLORS['문서스캔'], '문서스캔', [
       {val: fmt(cumTotals['문서스캔'].kwon), label:'권호수'},
       {val: fmt(cumTotals['문서스캔'].gun),  label:'건'},
       {val: fmt(cumTotals['문서스캔'].myun), label:'면'}
     ])}
     <div class="scan-inline-divider"></div>
-    ${cmInlineCard(PROCESS_COLORS['도면스캔'], '┗ 도면스캔', [
+    ${cmInlineCard(PROCESS_COLORS['도면스캔'], '도면스캔', [
       {val: fmt(cumTotals['도면스캔'].kwon), label:'권호수'},
       {val: fmt(cumTotals['도면스캔'].gun),  label:'건'},
       {val: fmt(cumTotals['도면스캔'].myun), label:'면'}
