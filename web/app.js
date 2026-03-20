@@ -278,17 +278,27 @@ function renderDashboard(data, c) {
   // 공정별 실적 세부 (권호수·건·면) — 일별 총괄표 누적합계와 동일 로직
   const cumDetail = {};
   for (const proc of PROCESSES) cumDetail[proc] = { labels:0, kwon:0, gun:0, myun:0 };
+  // 스캔합계 건수 (이중집계 방지: 문서 or 도면이 있는 레이블 기준)
+  let scanGun = 0;
   for (const [, ld] of Object.entries(labels)) {
     const b = ld['분류'] || {};
     const bKwon = b.kwon || 1;
     const bGun  = b.gun  || 0;
+    // 색인·재편철·공개구분의 면: 동일 레이블의 면표시·스캔 데이터에서 파생
+    const assocMyun = (ld['보정']?.myun || ld['면표시']?.myun ||
+      (ld['문서스캔']?.myun||0) + (ld['도면스캔']?.myun||0));
+    if ('문서스캔' in ld || '도면스캔' in ld) scanGun += bGun;
     for (const proc of PROCESSES) {
       if (!(proc in ld)) continue;
       const e  = ld[proc];
       const pd = cumDetail[proc];
       pd.labels += 1;
       if (proc === '분류') { pd.kwon += e.kwon||0; pd.gun += e.gun||0; }
-      else { pd.kwon += bKwon; pd.gun += bGun; pd.myun += e.myun||0; }
+      else {
+        pd.kwon += bKwon; pd.gun += bGun;
+        if (['면표시','문서스캔','도면스캔','보정'].includes(proc)) pd.myun += e.myun||0;
+        else pd.myun += assocMyun; // 색인·재편철·공개구분
+      }
     }
   }
   const scanRP = scanTK > 0 ? Math.round(scanCP / scanTK * 1000) / 10 : 0;
@@ -405,9 +415,10 @@ function renderDashboard(data, c) {
     } else if (['면표시','보정'].includes(proc)) {
       chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`, `${fmt(d.myun)}면`];
     } else if (['문서스캔','도면스캔'].includes(proc)) {
-      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.myun)}면`];
+      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`, `${fmt(d.myun)}면`];
     } else {
-      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`];
+      // 색인·재편철·공개구분
+      chips = [`${fmt(d.kwon)}권호수`, `${fmt(d.gun)}건`, `${fmt(d.myun)}면`];
     }
     return chips.map(t => `<span class="detail-chip">${t}</span>`).join('');
   }
@@ -425,7 +436,7 @@ function renderDashboard(data, c) {
         <td>${fmt(scanTK)}</td>
         <td><div class="dt-bar-wrap"><div class="dt-bar-bg"><div class="dt-bar-fill" style="width:${Math.min(scanRP,100)}%;background:${SCAN_COLOR}"></div></div><span class="dt-bar-pct">${scanRP}%</span></div></td>
         <td>${scanRemSFmt}</td>
-        <td><span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanCS)}면</span></td>
+        <td><span class="detail-chip">${fmt(scanCP)}권호수</span><span class="detail-chip">${fmt(scanGun)}건</span><span class="detail-chip">${fmt(scanCS)}면</span></td>
       </tr>`;
       // Children: 실적만, 공정율·잔여 없음
       for (const sub of ['문서스캔','도면스캔']) {
