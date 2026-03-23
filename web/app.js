@@ -190,7 +190,7 @@ function renderSidebar() {
     '📅 ' + data.project.start_date + ' ~ ' + data.project.end_date;
 
   const pages = [
-    { icon:'📈', name:'대시보드' },
+    { icon:'📈', name:'대시보드', sep:true },
     { icon:'📦', name:'반입반출 현황', sep:true },
     { icon:'📋', name:'공정진행표' },
     { icon:'📅', name:'일별 총괄표' },
