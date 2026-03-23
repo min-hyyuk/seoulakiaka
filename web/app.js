@@ -2167,10 +2167,12 @@ function renderTransferPage(data, c) {
       </div>
     </div>
     <div class="card">
-      <div class="card-title">📎 엑셀 업로드</div>
-      <div class="caption-top mb-8">반입반출 총괄표 엑셀 파일을 업로드하여 데이터를 가져옵니다. (양식 추후 확정)</div>
-      <input type="file" accept=".xlsx,.xls" onchange="uploadTransferExcel(this)" style="margin-bottom:8px">
-      <div id="tf-upload-preview"></div>
+      <div class="card-title">📎 레이블 등록 (엑셀 업로드)</div>
+      <div class="caption-top mb-8">레이블번호, 상자번호, 반출/반입회차가 포함된 엑셀(xlsx) 파일을 업로드하세요. 반출/반입회차에 따라 반출수량이 자동 집계됩니다.</div>
+      <div class="form-group mb-12">
+        <input type="file" id="label-file" accept=".xlsx,.csv" onchange="previewLabelFile(this)">
+      </div>
+      <div id="label-preview"></div>
     </div>
     <div id="batch-label-modal"></div>
   `;
@@ -2325,27 +2327,6 @@ function deleteTransferRow(idx, e) {
   });
 }
 
-function uploadTransferExcel(input) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const wb = XLSX.read(e.target.result, {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
-      document.getElementById('tf-upload-preview').innerHTML = `
-        <div class="alert alert-info">📄 ${esc(file.name)} — ${rows.length}행 감지. 양식 확정 후 자동 파싱이 적용됩니다.</div>
-        <div class="scroll-table-wrap" style="max-height:200px"><table>
-          <tbody>${rows.slice(0, 15).map(r => `<tr>${r.map(c => `<td style="font-size:11px;white-space:nowrap">${esc(String(c))}</td>`).join('')}</tr>`).join('')}</tbody>
-        </table></div>
-      `;
-    } catch(err) {
-      showToast('엑셀 파싱 실패: ' + err.message, 'error');
-    }
-  };
-  reader.readAsArrayBuffer(file);
-}
 
 // ⚙️ 설정
 // ============================================================
@@ -2490,14 +2471,8 @@ function renderStTab2(data) {
 
   document.getElementById('stab-2').innerHTML = `
     <div class="card">
-      <div class="card-title">레이블 목록 등록</div>
       <div class="alert alert-info">현재 등록된 레이블: <strong>${fmt(cnt)}건</strong></div>
-      <div class="caption-top">레이블번호, 상자번호가 포함된 엑셀(xlsx) 또는 CSV 파일을 업로드하세요.</div>
-      <div class="form-group mb-12">
-        <label>파일 선택</label>
-        <input type="file" id="label-file" accept=".xlsx,.csv" onchange="previewLabelFile(this)">
-      </div>
-      <div id="label-preview"></div>
+      <div class="caption-top">레이블 업로드는 <strong>📦 반입반출 현황</strong> 페이지에서 관리합니다.</div>
     </div>
     ${cnt ? `
     <div class="card">
@@ -2590,7 +2565,9 @@ function importLabels(replace) {
   saveData(data);
   showToast(`${cnt}건 레이블 등록 완료`);
   window._regSearch = '';
-  renderStTab2(data);
+  // 현재 페이지에 따라 새로고침
+  if (document.getElementById('stab-2')) renderStTab2(data);
+  if (document.getElementById('transfer-section')) renderTransferPage(data, document.getElementById('main-content'));
 }
 
 function clearRegistry() {
@@ -2839,7 +2816,6 @@ window.addTransferRow = addTransferRow;
 window.deleteTransferRow = deleteTransferRow;
 window.startTfCellEdit = startTfCellEdit;
 window.showBatchLabels = showBatchLabels;
-window.uploadTransferExcel = uploadTransferExcel;
 window.switchQTab = switchQTab;
 window.addQiRow = addQiRow;
 window.calcQiResult = calcQiResult;
