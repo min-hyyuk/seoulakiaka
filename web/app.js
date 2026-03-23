@@ -2062,21 +2062,22 @@ function renderTransferPage(data, c) {
   const banChul = recs.filter(r => r.group === '반출');
   const banIp   = recs.filter(r => r.group === '반입');
 
-  function calcDB(r) { return (r.qty||0) + (r.split||0) - (r.exclude||0) - (r.merge||0) - (r.fullSplit||0); }
+  // 반출수량(철) = 해당 회차의 등록 레이블 수 (자동 집계)
+  function getQty(r) { return getBatchStats(r.name).total; }
+  function calcDB(r) { return getQty(r) + (r.split||0) - (r.exclude||0) - (r.merge||0) - (r.fullSplit||0); }
   function sumF(arr, fn) { return arr.reduce((s, r) => s + fn(r), 0); }
 
   function groupRows(arr, groupLabel) {
     let rows = '';
     arr.forEach((r, i) => {
       const idx = recs.indexOf(r);
+      const qty = getQty(r);
       const db = calcDB(r);
-      const bs = getBatchStats(r.name);
-      const pctBar = r.qty > 0 ? Math.min(Math.round(bs.total / r.qty * 100), 100) : 0;
       rows += `<tr class="tf-row" data-idx="${idx}" tabindex="0">
         ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
         <td class="tf-cell" data-field="name">${esc(r.name)}</td>
         <td class="tf-cell" data-field="place">${esc(r.place)}</td>
-        <td class="tf-cell num" data-field="qty">${fmt(r.qty||0)}</td>
+        <td class="num tf-calc"><strong>${fmt(qty)}</strong></td>
         <td class="tf-cell num" data-field="split">${fmt(r.split||0)}</td>
         <td class="tf-cell num" data-field="exclude">${fmt(r.exclude||0)}</td>
         <td class="tf-cell num" data-field="childExclude">${fmt(r.childExclude||0)}</td>
@@ -2085,24 +2086,20 @@ function renderTransferPage(data, c) {
         <td class="num tf-calc"><strong>${fmt(db)}</strong></td>
         <td class="tf-cell num" data-field="kwon">${fmt(r.kwon||0)}</td>
         <td class="tf-cell" data-field="inPlace">${esc(r.inPlace||'')}</td>
-        <td class="num tf-link" onclick="showBatchLabels('${esc(r.name)}',event)" title="클릭하여 레이블 목록 보기">
-          <span class="tf-link-num">${bs.total}</span>
-          ${r.qty > 0 ? `<div class="tf-mini-bar"><div class="tf-mini-fill" style="width:${pctBar}%"></div></div>` : ''}
-        </td>
         <td class="tf-del"><button class="btn btn-xs btn-danger" onclick="deleteTransferRow(${idx},event)">✕</button></td>
       </tr>`;
     });
     // 합계
-    const sums = ['qty','split','exclude','childExclude','merge','fullSplit','kwon'].map(f => sumF(arr, r=>r[f]||0));
+    const tQty = sumF(arr, getQty);
+    const sums = ['split','exclude','childExclude','merge','fullSplit','kwon'].map(f => sumF(arr, r=>r[f]||0));
     const tDB = sumF(arr, calcDB);
-    const tLinked = arr.reduce((s, r) => s + getBatchStats(r.name).total, 0);
     rows += `<tr class="tf-subtotal">
       <td colspan="2"><strong>합계</strong></td>
-      ${sums.slice(0,6).map(v => `<td class="num"><strong>${fmt(v)}</strong></td>`).join('')}
+      <td class="num"><strong>${fmt(tQty)}</strong></td>
+      ${sums.slice(0,5).map(v => `<td class="num"><strong>${fmt(v)}</strong></td>`).join('')}
       <td class="num"><strong>${fmt(tDB)}</strong></td>
-      <td class="num"><strong>${fmt(sums[6])}</strong></td>
+      <td class="num"><strong>${fmt(sums[5])}</strong></td>
       <td></td>
-      <td class="num"><strong>${tLinked}</strong></td>
       <td></td>
     </tr>`;
     return rows;
@@ -2110,7 +2107,7 @@ function renderTransferPage(data, c) {
 
   const allDB = sumF(recs, calcDB);
   const allKwon = sumF(recs, r => r.kwon||0);
-  const allLinked = recs.reduce((s, r) => s + getBatchStats(r.name).total, 0);
+  const allQty = sumF(recs, getQty);
   const totalReg = Object.keys(registry).length;
 
   c.innerHTML = `
@@ -2119,10 +2116,10 @@ function renderTransferPage(data, c) {
       <div class="metric-card"><div class="metric-label">반출입 회차</div><div class="metric-value">${recs.length}건</div></div>
       <div class="metric-card"><div class="metric-label">DB구축 합계</div><div class="metric-value">${fmt(allDB)}철</div></div>
       <div class="metric-card"><div class="metric-label">권호수 합계</div><div class="metric-value">${fmt(allKwon)}권</div></div>
-      <div class="metric-card"><div class="metric-label">연결 레이블</div><div class="metric-value">${fmt(allLinked)} / ${fmt(totalReg)}</div></div>
+      <div class="metric-card"><div class="metric-label">등록 레이블</div><div class="metric-value">${fmt(allQty)} / ${fmt(totalReg)}</div></div>
     </div>
     <div class="card" id="transfer-section">
-      <div class="caption-top mb-8">💡 셀을 <strong>더블클릭</strong>하거나 행 선택 후 <strong>F2</strong>를 눌러 편집 · Enter 저장 · Esc 취소 · 회차명이 레이블의 반입회차와 자동 연결됩니다</div>
+      <div class="caption-top mb-8">💡 반출수량(철)은 등록 레이블에서 자동 집계됩니다 · 셀 <strong>더블클릭</strong> 또는 <strong>F2</strong>로 편집 · Enter 저장 · Esc 취소</div>
       <div class="table-wrap"><table class="transfer-tbl" id="transfer-tbl">
         <thead>
           <tr>
@@ -2133,7 +2130,6 @@ function renderTransferPage(data, c) {
             <th colspan="5">반입</th>
             <th rowspan="2">권호수<br>구분</th>
             <th rowspan="2">반입장소</th>
-            <th rowspan="2">연결<br>레이블</th>
             <th rowspan="2" style="width:36px"></th>
           </tr>
           <tr>
@@ -2154,9 +2150,8 @@ function renderTransferPage(data, c) {
             <td colspan="6" class="num"><strong>${fmt(allDB)}</strong></td>
             <td class="num"><strong>${fmt(allKwon)}</strong></td>
             <td></td>
-            <td class="num"><strong>${allLinked}</strong></td>
             <td></td>
-          </tr>` : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
+          </tr>` : '<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
         </tbody>
       </table></div>
       <div class="btn-row mt-8">
@@ -2568,6 +2563,23 @@ function importLabels(replace) {
     data.label_registry[lbl] = { box: String(r[boxCol||'']||'').trim(), batch: String(r[batchCol||'']||'').trim() };
     cnt++;
   }
+  // 반입반출 현황: 새 회차 자동 추가
+  const newBatches = new Set();
+  for (const r of rows) {
+    const batch = String(r[batchCol||'']||'').trim();
+    if (batch) newBatches.add(batch);
+  }
+  const existingNames = new Set((data.transfer_records||[]).map(t => t.name));
+  for (const batch of newBatches) {
+    if (!existingNames.has(batch)) {
+      if (!data.transfer_records) data.transfer_records = [];
+      data.transfer_records.push({
+        group:'반입', name:batch, place:'', qty:0, split:0, exclude:0,
+        childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
+      });
+    }
+  }
+
   saveData(data);
   showToast(`${cnt}건 레이블 등록 완료`);
   window._regSearch = '';
