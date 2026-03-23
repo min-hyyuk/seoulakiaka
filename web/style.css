@@ -556,6 +556,7 @@ textarea { resize: vertical; min-height: 80px; }
   border-radius: 6px;
 }
 .scroll-table-wrap table { border-collapse: collapse; width: 100%; }
+.scroll-table-wrap table th, .scroll-table-wrap table td { text-align: center; }
 .scroll-table-wrap thead th {
   position: sticky;
   top: 0;
