@@ -2064,7 +2064,7 @@ function renderTransferPage(data, c) {
 
   // 반출수량(철) = 해당 반입회차(batch)의 등록 레이블 수 (자동 집계)
   function getQty(r) { return getBatchStats(r.batch || '').total; }
-  function calcDB(r) { return getQty(r) + (r.split||0) - (r.exclude||0) - (r.merge||0) - (r.fullSplit||0); }
+  function calcDB(r) { return getBatchStats(r.batch || '').completed; }
   function sumF(arr, fn) { return arr.reduce((s, r) => s + fn(r), 0); }
 
   function groupRows(arr, groupLabel) {
