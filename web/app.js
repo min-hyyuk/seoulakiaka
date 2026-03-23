@@ -206,7 +206,6 @@ function renderSidebar() {
     { icon:'📋', name:'공정진행표' },
     { icon:'📅', name:'일별 총괄표' },
     { icon:'👥', name:'작업자별 현황' },
-    { icon:'📦', name:'반입반출 현황' },
     { icon:'🔍', name:'품질검사' },
     { icon:'⚙️', name:'설정' },
   ];
@@ -240,7 +239,6 @@ function renderContent() {
       break;
     case '일별 총괄표': renderDailySummary(data, c); break;
     case '작업자별 현황': renderWorkerStats(data, c); break;
-    case '반입반출 현황': renderTransferPage(data, c); break;
     case '품질검사':      renderQuality(data, c); break;
     case '설정':          renderSettings(data, c); break;
     default: c.innerHTML = '<div class="empty-state">페이지를 찾을 수 없습니다.</div>';
@@ -502,6 +500,9 @@ function renderDashboard(data, c) {
       <thead><tr><th>공정</th><th>목표(권/면)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
+    <hr class="divider">
+    <div class="section-header">반입반출 현황</div>
+    <div class="card" id="transfer-section">${renderTransferTable(data)}</div>
     ${hasData ? `
     <hr class="divider">
     <div class="section-header">일별 공정 추이</div>
@@ -524,13 +525,6 @@ function renderDashboard(data, c) {
 // ============================================================
 // 반입반출 현황 테이블
 // ============================================================
-function renderTransferPage(data, c) {
-  c.innerHTML = `
-    <div class="page-title">📦 반입반출 현황</div>
-    <div class="card" id="transfer-section">${renderTransferTable(data)}</div>
-  `;
-}
-
 function renderTransferTable(data) {
   const recs = data.transfer_records || [];
   const banChul = recs.filter(r => r.group === '반출');
