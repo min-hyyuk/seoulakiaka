@@ -2078,6 +2078,7 @@ function renderTransferPage(data, c) {
         ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
         <td class="tf-cell" data-field="name">${esc(r.name)}</td>
         <td class="tf-cell tf-batch" data-field="batch">${esc(r.batch||'')}</td>
+        <td class="tf-cell" data-field="transferDate">${esc(r.transferDate||'')}</td>
         <td class="tf-cell" data-field="place">${esc(r.place)}</td>
         <td class="num tf-calc"><strong>${fmt(qty)}</strong></td>
         <td class="tf-cell num" data-field="split">${fmt(r.split||0)}</td>
@@ -2096,7 +2097,7 @@ function renderTransferPage(data, c) {
     const sums = ['split','exclude','childExclude','merge','fullSplit','kwon'].map(f => sumF(arr, r=>r[f]||0));
     const tDB = sumF(arr, calcDB);
     rows += `<tr class="tf-subtotal">
-      <td colspan="3"><strong>합계</strong></td>
+      <td colspan="4"><strong>합계</strong></td>
       <td class="num"><strong>${fmt(tQty)}</strong></td>
       ${sums.slice(0,5).map(v => `<td class="num"><strong>${fmt(v)}</strong></td>`).join('')}
       <td class="num"><strong>${fmt(tDB)}</strong></td>
@@ -2128,6 +2129,7 @@ function renderTransferPage(data, c) {
             <th rowspan="2" style="width:50px">구분</th>
             <th rowspan="2">회차</th>
             <th rowspan="2">반입회차</th>
+            <th rowspan="2">반출일자</th>
             <th rowspan="2">반출장소</th>
             <th colspan="2">반출</th>
             <th colspan="5">반입</th>
@@ -2149,12 +2151,12 @@ function renderTransferPage(data, c) {
           ${banChul.length ? groupRows(banChul, '반출') : ''}
           ${banIp.length ? groupRows(banIp, '반입') : ''}
           ${recs.length ? `<tr class="tf-total">
-            <td colspan="4"><strong>반출입 수량 합계</strong></td>
+            <td colspan="5"><strong>반출입 수량 합계</strong></td>
             <td colspan="6" class="num"><strong>${fmt(allDB)}</strong></td>
             <td class="num"><strong>${fmt(allKwon)}</strong></td>
             <td></td>
             <td></td>
-          </tr>` : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
+          </tr>` : '<tr><td colspan="15" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
         </tbody>
       </table></div>
       <div class="btn-row mt-8">
@@ -2303,7 +2305,7 @@ function startTfCellEdit(cell) {
 function addTransferRow(group) {
   const data = loadData();
   data.transfer_records.push({
-    group, name:'', batch:'', place:'', qty:0, split:0, exclude:0,
+    group, name:'', batch:'', transferDate:'', place:'', qty:0, split:0, exclude:0,
     childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
   });
   saveData(data);
@@ -2577,7 +2579,7 @@ function importLabels(replace) {
     if (!existingBatches.has(batch)) {
       if (!data.transfer_records) data.transfer_records = [];
       data.transfer_records.push({
-        group:'반입', name:'', batch:batch, place:'', qty:0, split:0, exclude:0,
+        group:'반입', name:'', batch:batch, transferDate:'', place:'', qty:0, split:0, exclude:0,
         childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
       });
     }
