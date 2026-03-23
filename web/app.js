@@ -2076,7 +2076,7 @@ function renderTransferPage(data, c) {
       rows += `<tr class="tf-row" data-idx="${idx}" tabindex="0">
         ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
         <td class="tf-cell" data-field="name">${esc(r.name)}</td>
-        <td class="tf-cell tf-batch" data-field="batch" ondblclick="event.stopPropagation();showBatchLabels('${esc(r.batch||'')}',event)">${esc(r.batch||'')}</td>
+        <td class="tf-cell tf-batch" data-field="batch">${esc(r.batch||'')}</td>
         <td class="tf-cell" data-field="place">${esc(r.place)}</td>
         <td class="num tf-calc"><strong>${fmt(qty)}</strong></td>
         <td class="tf-cell num" data-field="split">${fmt(r.split||0)}</td>
