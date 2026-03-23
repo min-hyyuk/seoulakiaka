@@ -2128,8 +2128,8 @@ function renderTransferPage(data, c) {
           <tr>
             <th rowspan="2" style="width:50px">구분</th>
             <th rowspan="2">회차</th>
-            <th rowspan="2">반입회차</th>
-            <th rowspan="2">반출일자</th>
+            <th rowspan="2">반출/반입<br>회차</th>
+            <th rowspan="2">반출/반입<br>일자</th>
             <th rowspan="2">반출장소</th>
             <th colspan="2">반출</th>
             <th colspan="5">반입</th>
