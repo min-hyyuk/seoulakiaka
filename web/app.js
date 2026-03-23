@@ -491,23 +491,12 @@ function renderDashboard(data, c) {
       <thead><tr><th>공정</th><th>목표(권/면)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
-    ${hasData ? `
-    <hr class="divider">
-    <div class="section-header">일별 공정 추이</div>
-    <div class="tabs" style="margin-bottom:0">
-      <button class="tab-btn active" id="tb-daily" onclick="switchDashTab('daily')">일별 실적</button>
-      <button class="tab-btn" id="tb-cumul" onclick="switchDashTab('cumul')">누적 실적</button>
-    </div>
-    <div class="card" style="margin-top:0;border-radius:0 0 8px 8px">
-      <div class="chart-wrap chart-h350"><canvas id="dash-chart"></canvas></div>
-    </div>` : ''}
   `;
 
   for (const proc of GAUGE_ORDER) {
     if (proc === '__scan__') makeGauge('g-스캔합계', scanRP, SCAN_COLOR);
     else makeGauge(`g-${proc}`, cum[proc].rp, PROCESS_COLORS[proc]);
   }
-  if (hasData) buildDashChart('daily', getDailyAgg(data));
 }
 
 function switchDashTab(tab) {
