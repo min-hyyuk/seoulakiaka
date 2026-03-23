@@ -29,6 +29,7 @@ function loadData() {
       if (!d.error_labels) d.error_labels = [];
       if (!d.sampling_logs) d.sampling_logs = [];
       if (!d.daily_logs) d.daily_logs = [];
+      if (!d.transfer_records) d.transfer_records = [];
       return d;
     }
   } catch(e) {}
@@ -48,7 +49,8 @@ function getDefaultData() {
     labels: {},
     daily_logs: [],
     sampling_logs: [],
-    error_labels: []
+    error_labels: [],
+    transfer_records: []
   };
 }
 
@@ -192,6 +194,7 @@ function renderSidebar() {
     { icon:'📋', name:'공정진행표' },
     { icon:'📅', name:'일별 총괄표' },
     { icon:'👥', name:'작업자별 현황' },
+    { icon:'📦', name:'반입반출 현황' },
     { icon:'🔍', name:'품질검사' },
     { icon:'⚙️', name:'설정' },
   ];
@@ -225,6 +228,7 @@ function renderContent() {
       break;
     case '일별 총괄표': renderDailySummary(data, c); break;
     case '작업자별 현황': renderWorkerStats(data, c); break;
+    case '반입반출 현황': renderTransferPage(data, c); break;
     case '품질검사':      renderQuality(data, c); break;
     case '설정':          renderSettings(data, c); break;
     default: c.innerHTML = '<div class="empty-state">페이지를 찾을 수 없습니다.</div>';
@@ -2021,6 +2025,325 @@ function reworkDelete() {
 }
 
 // ============================================================
+// ============================================================
+// 📦 반입반출 현황
+// ============================================================
+function renderTransferPage(data, c) {
+  const recs = data.transfer_records || [];
+  const registry = data.label_registry || {};
+  const labels = data.labels || {};
+
+  // 반입회차별 레이블 연결 통계
+  function getBatchStats(batchName) {
+    const linked = [];
+    for (const [num, reg] of Object.entries(registry)) {
+      if ((reg.batch || '') === batchName) linked.push(num);
+    }
+    const total = linked.length;
+    let classified = 0, completed = 0;
+    for (const num of linked) {
+      const ld = labels[num];
+      if (!ld) continue;
+      if ('분류' in ld) classified++;
+      if ('공개구분' in ld) completed++;
+    }
+    const stage = getLabelStage;
+    const procCounts = {};
+    for (const p of PROCESSES) procCounts[p] = 0;
+    for (const num of linked) {
+      const ld = labels[num];
+      if (!ld) continue;
+      for (const p of PROCESSES) if (p in ld) procCounts[p]++;
+    }
+    return { linked, total, classified, completed, procCounts };
+  }
+
+  // 그룹별 분리
+  const banChul = recs.filter(r => r.group === '반출');
+  const banIp   = recs.filter(r => r.group === '반입');
+
+  function calcDB(r) { return (r.qty||0) + (r.split||0) - (r.exclude||0) - (r.merge||0) - (r.fullSplit||0); }
+  function sumF(arr, fn) { return arr.reduce((s, r) => s + fn(r), 0); }
+
+  function groupRows(arr, groupLabel) {
+    let rows = '';
+    arr.forEach((r, i) => {
+      const idx = recs.indexOf(r);
+      const db = calcDB(r);
+      const bs = getBatchStats(r.name);
+      const pctBar = r.qty > 0 ? Math.min(Math.round(bs.total / r.qty * 100), 100) : 0;
+      rows += `<tr class="tf-row" data-idx="${idx}" tabindex="0">
+        ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
+        <td class="tf-cell" data-field="name">${esc(r.name)}</td>
+        <td class="tf-cell" data-field="place">${esc(r.place)}</td>
+        <td class="tf-cell num" data-field="qty">${fmt(r.qty||0)}</td>
+        <td class="tf-cell num" data-field="split">${fmt(r.split||0)}</td>
+        <td class="tf-cell num" data-field="exclude">${fmt(r.exclude||0)}</td>
+        <td class="tf-cell num" data-field="childExclude">${fmt(r.childExclude||0)}</td>
+        <td class="tf-cell num" data-field="merge">${fmt(r.merge||0)}</td>
+        <td class="tf-cell num" data-field="fullSplit">${fmt(r.fullSplit||0)}</td>
+        <td class="num tf-calc"><strong>${fmt(db)}</strong></td>
+        <td class="tf-cell num" data-field="kwon">${fmt(r.kwon||0)}</td>
+        <td class="tf-cell" data-field="inPlace">${esc(r.inPlace||'')}</td>
+        <td class="num tf-link" onclick="showBatchLabels('${esc(r.name)}',event)" title="클릭하여 레이블 목록 보기">
+          <span class="tf-link-num">${bs.total}</span>
+          ${r.qty > 0 ? `<div class="tf-mini-bar"><div class="tf-mini-fill" style="width:${pctBar}%"></div></div>` : ''}
+        </td>
+      </tr>`;
+    });
+    // 합계
+    const sums = ['qty','split','exclude','childExclude','merge','fullSplit','kwon'].map(f => sumF(arr, r=>r[f]||0));
+    const tDB = sumF(arr, calcDB);
+    const tLinked = arr.reduce((s, r) => s + getBatchStats(r.name).total, 0);
+    rows += `<tr class="tf-subtotal">
+      <td colspan="2"><strong>합계</strong></td>
+      ${sums.slice(0,6).map(v => `<td class="num"><strong>${fmt(v)}</strong></td>`).join('')}
+      <td class="num"><strong>${fmt(tDB)}</strong></td>
+      <td class="num"><strong>${fmt(sums[6])}</strong></td>
+      <td></td>
+      <td class="num"><strong>${tLinked}</strong></td>
+    </tr>`;
+    return rows;
+  }
+
+  const allDB = sumF(recs, calcDB);
+  const allKwon = sumF(recs, r => r.kwon||0);
+  const allLinked = recs.reduce((s, r) => s + getBatchStats(r.name).total, 0);
+  const totalReg = Object.keys(registry).length;
+
+  c.innerHTML = `
+    <div class="page-title">📦 반입반출 현황</div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr)">
+      <div class="metric-card"><div class="metric-label">반출입 회차</div><div class="metric-value">${recs.length}건</div></div>
+      <div class="metric-card"><div class="metric-label">DB구축 합계</div><div class="metric-value">${fmt(allDB)}철</div></div>
+      <div class="metric-card"><div class="metric-label">권호수 합계</div><div class="metric-value">${fmt(allKwon)}권</div></div>
+      <div class="metric-card"><div class="metric-label">연결 레이블</div><div class="metric-value">${fmt(allLinked)} / ${fmt(totalReg)}</div></div>
+    </div>
+    <div class="card" id="transfer-section">
+      <div class="caption-top mb-8">💡 셀을 <strong>더블클릭</strong>하거나 행 선택 후 <strong>F2</strong>를 눌러 편집 · Enter 저장 · Esc 취소 · 회차명이 레이블의 반입회차와 자동 연결됩니다</div>
+      <div class="table-wrap"><table class="transfer-tbl" id="transfer-tbl">
+        <thead>
+          <tr>
+            <th rowspan="2" style="width:50px">구분</th>
+            <th rowspan="2">회차</th>
+            <th rowspan="2">반출장소</th>
+            <th colspan="2">반출</th>
+            <th colspan="5">반입</th>
+            <th rowspan="2">권호수<br>구분</th>
+            <th rowspan="2">반입장소</th>
+            <th rowspan="2">연결<br>레이블</th>
+          </tr>
+          <tr>
+            <th>반출수량<br>(철)</th>
+            <th>분철</th>
+            <th>제외</th>
+            <th>아동카드<br>제외</th>
+            <th>합권</th>
+            <th>전권분철</th>
+            <th>DB구축<br>완료</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${banChul.length ? groupRows(banChul, '반출') : ''}
+          ${banIp.length ? groupRows(banIp, '반입') : ''}
+          ${recs.length ? `<tr class="tf-total">
+            <td colspan="3"><strong>반출입 수량 합계</strong></td>
+            <td colspan="6" class="num"><strong>${fmt(allDB)}</strong></td>
+            <td class="num"><strong>${fmt(allKwon)}</strong></td>
+            <td></td>
+            <td class="num"><strong>${allLinked}</strong></td>
+          </tr>` : '<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
+        </tbody>
+      </table></div>
+      <div class="btn-row mt-8">
+        <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반출')">+ 반출 추가</button>
+        <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반입')">+ 반입 추가</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTransferRow()">🗑️ 선택행 삭제</button>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">📎 엑셀 업로드</div>
+      <div class="caption-top mb-8">반입반출 총괄표 엑셀 파일을 업로드하여 데이터를 가져옵니다. (양식 추후 확정)</div>
+      <input type="file" accept=".xlsx,.xls" onchange="uploadTransferExcel(this)" style="margin-bottom:8px">
+      <div id="tf-upload-preview"></div>
+    </div>
+    <div id="batch-label-modal"></div>
+  `;
+  initTransferEditing();
+}
+
+function showBatchLabels(batchName, e) {
+  if (e) e.stopPropagation();
+  const data = loadData();
+  const registry = data.label_registry || {};
+  const labels = data.labels || {};
+  const linked = [];
+  for (const [num, reg] of Object.entries(registry)) {
+    if ((reg.batch || '') === batchName) {
+      const ld = labels[num] || {};
+      const stage = getLabelStage(ld);
+      const box = reg.box || '';
+      linked.push({ num, box, stage });
+    }
+  }
+  linked.sort((a,b) => a.num.localeCompare(b.num));
+
+  // 공정별 진행 현황
+  const procCounts = {};
+  for (const p of PROCESSES) procCounts[p] = 0;
+  for (const l of linked) {
+    const ld = labels[l.num] || {};
+    for (const p of PROCESSES) if (p in ld) procCounts[p]++;
+  }
+  const procBars = PROCESSES.map(p => {
+    const pct = linked.length > 0 ? Math.round(procCounts[p] / linked.length * 100) : 0;
+    return `<div style="display:flex;align-items:center;gap:6px;font-size:12px;margin:2px 0">
+      <span style="width:60px;color:${PROCESS_COLORS[p]}">${p}</span>
+      <div style="flex:1;height:14px;background:var(--hover-bg);border-radius:3px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:${PROCESS_COLORS[p]};border-radius:3px"></div>
+      </div>
+      <span style="width:60px;text-align:right">${procCounts[p]}/${linked.length} (${pct}%)</span>
+    </div>`;
+  }).join('');
+
+  const tblRows = linked.map(l =>
+    `<tr><td>${esc(l.num)}</td><td>${esc(l.box)}</td><td><span class="badge badge-${l.stage==='완료'?'green':'gray'}">${esc(l.stage)}</span></td></tr>`
+  ).join('');
+
+  showModal(`
+    <div class="modal-title">📦 ${esc(batchName)} — 연결 레이블 (${linked.length}건)</div>
+    <div style="margin-bottom:12px">${procBars}</div>
+    <div class="scroll-table-wrap" style="max-height:300px">
+      <table>
+        <thead><tr><th>레이블번호</th><th>상자번호</th><th>현재 단계</th></tr></thead>
+        <tbody>${tblRows || '<tr><td colspan="3" style="text-align:center;padding:16px">연결된 레이블이 없습니다</td></tr>'}</tbody>
+      </table>
+    </div>
+  `);
+}
+
+function initTransferEditing() {
+  const tbl = document.getElementById('transfer-tbl');
+  if (!tbl) return;
+
+  tbl.addEventListener('dblclick', e => {
+    const cell = e.target.closest('.tf-cell');
+    if (!cell || cell.querySelector('input')) return;
+    startTfCellEdit(cell);
+  });
+
+  tbl.addEventListener('keydown', e => {
+    if (e.key === 'F2') {
+      const row = document.activeElement?.closest('.tf-row');
+      if (row && !row.querySelector('input')) {
+        e.preventDefault();
+        const firstCell = row.querySelector('.tf-cell');
+        if (firstCell) startTfCellEdit(firstCell);
+      }
+    }
+  });
+}
+
+function startTfCellEdit(cell) {
+  const row = cell.closest('.tf-row');
+  const idx = parseInt(row.dataset.idx);
+  const field = cell.dataset.field;
+  const data = loadData();
+  const rec = data.transfer_records[idx];
+  if (!rec) return;
+
+  const TF_NUM = new Set(['qty','split','exclude','childExclude','merge','fullSplit','kwon']);
+  const isNum = TF_NUM.has(field);
+  const val = rec[field];
+
+  const input = document.createElement('input');
+  input.type = isNum ? 'number' : 'text';
+  input.value = val ?? '';
+  input.className = 'tf-edit-input';
+  cell.textContent = '';
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+
+  let saved = false;
+  function save() {
+    if (saved) return;
+    saved = true;
+    const newVal = isNum ? (parseInt(input.value) || 0) : input.value.trim();
+    const d = loadData();
+    d.transfer_records[idx][field] = newVal;
+    saveData(d);
+    renderTransferPage(d, document.getElementById('main-content'));
+  }
+  function cancel() { if (!saved) { saved = true; renderTransferPage(loadData(), document.getElementById('main-content')); } }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      const curField = field;
+      save();
+      setTimeout(() => {
+        const tbl = document.getElementById('transfer-tbl');
+        if (!tbl) return;
+        const newRow = tbl.querySelector(`.tf-row[data-idx="${idx}"]`);
+        if (!newRow) return;
+        const cells = [...newRow.querySelectorAll('.tf-cell')];
+        const ci = cells.findIndex(c => c.dataset.field === curField);
+        const next = cells[ci + 1] || cells[0];
+        if (next) startTfCellEdit(next);
+      }, 50);
+    }
+  });
+  input.addEventListener('blur', () => { setTimeout(() => { if (!saved) save(); }, 100); });
+}
+
+function addTransferRow(group) {
+  const data = loadData();
+  data.transfer_records.push({
+    group, name:'', place:'', qty:0, split:0, exclude:0,
+    childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
+  });
+  saveData(data);
+  renderTransferPage(data, document.getElementById('main-content'));
+}
+
+function deleteTransferRow() {
+  const row = document.querySelector('.tf-row:focus, .tf-row:has(input)');
+  if (!row) { showToast('삭제할 행을 선택(클릭)하세요', 'warning'); return; }
+  const idx = parseInt(row.dataset.idx);
+  showConfirm('해당 항목을 삭제하시겠습니까?', () => {
+    const data = loadData();
+    data.transfer_records.splice(idx, 1);
+    saveData(data);
+    renderTransferPage(data, document.getElementById('main-content'));
+    showToast('삭제 완료');
+  });
+}
+
+function uploadTransferExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:''});
+      document.getElementById('tf-upload-preview').innerHTML = `
+        <div class="alert alert-info">📄 ${esc(file.name)} — ${rows.length}행 감지. 양식 확정 후 자동 파싱이 적용됩니다.</div>
+        <div class="scroll-table-wrap" style="max-height:200px"><table>
+          <tbody>${rows.slice(0, 15).map(r => `<tr>${r.map(c => `<td style="font-size:11px;white-space:nowrap">${esc(String(c))}</td>`).join('')}</tr>`).join('')}</tbody>
+        </table></div>
+      `;
+    } catch(err) {
+      showToast('엑셀 파싱 실패: ' + err.message, 'error');
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
 // ⚙️ 설정
 // ============================================================
 function renderSettings(data, c) {
@@ -2452,6 +2775,11 @@ window.saveHistEdit = saveHistEdit;
 window.deleteSelected = deleteSelected;
 window.toggleHistAll = toggleHistAll;
 window.updateWorkerStats = updateWorkerStats;
+window.addTransferRow = addTransferRow;
+window.deleteTransferRow = deleteTransferRow;
+window.startTfCellEdit = startTfCellEdit;
+window.showBatchLabels = showBatchLabels;
+window.uploadTransferExcel = uploadTransferExcel;
 window.switchQTab = switchQTab;
 window.addQiRow = addQiRow;
 window.calcQiResult = calcQiResult;

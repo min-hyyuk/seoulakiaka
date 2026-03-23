@@ -845,6 +845,27 @@ textarea { resize: vertical; min-height: 80px; }
 th.cf-active { background:color-mix(in srgb, var(--primary) 10%, var(--card-bg)) !important; }
 th.cf-active .th-cf-icon { opacity:1; color:var(--primary); }
 
+/* 반입반출 현황 테이블 */
+.transfer-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.transfer-tbl th, .transfer-tbl td { border:1px solid var(--border); padding:6px 8px; text-align:center; white-space:nowrap; }
+.transfer-tbl th { background:var(--hover-bg); font-weight:600; font-size:11px; }
+.transfer-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; }
+.transfer-tbl .tf-group { background:var(--hover-bg); font-weight:700; vertical-align:middle; }
+.transfer-tbl .tf-subtotal { background:color-mix(in srgb, var(--primary) 6%, var(--card-bg)); }
+.transfer-tbl .tf-total { background:color-mix(in srgb, var(--primary) 12%, var(--card-bg)); }
+.tf-row { cursor:pointer; }
+.tf-row:focus, .tf-row:hover { background:color-mix(in srgb, var(--primary) 6%, var(--card-bg)); outline:none; }
+.tf-cell { cursor:pointer; }
+.tf-cell:hover { background:color-mix(in srgb, var(--primary) 10%, var(--card-bg)); }
+.tf-edit-input { width:100%; padding:2px 4px; border:1.5px solid var(--primary); border-radius:3px; font-size:12px; background:var(--card-bg); color:var(--text); text-align:inherit; outline:none; }
+.tf-edit-input:focus { box-shadow:0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent); }
+.tf-calc { background:color-mix(in srgb, var(--primary) 4%, var(--card-bg)); }
+.tf-link { cursor:pointer; color:var(--primary); }
+.tf-link:hover { background:color-mix(in srgb, var(--primary) 15%, var(--card-bg)); }
+.tf-link-num { font-weight:700; font-size:13px; }
+.tf-mini-bar { width:100%; height:4px; background:var(--hover-bg); border-radius:2px; margin-top:3px; overflow:hidden; }
+.tf-mini-fill { height:100%; background:var(--primary); border-radius:2px; transition:width .3s; }
+
 /* Responsive gauges */
 @media (max-width: 1000px) {
   .gauge-grid { grid-template-columns: repeat(2, 1fr); }
