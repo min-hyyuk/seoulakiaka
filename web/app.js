@@ -529,6 +529,7 @@ function renderTransferPage(data, c) {
     <div class="page-title">📦 반입반출 현황</div>
     <div class="card" id="transfer-section">${renderTransferTable(data)}</div>
   `;
+  initTransferEditing();
 }
 
 function renderTransferTable(data) {
@@ -536,30 +537,31 @@ function renderTransferTable(data) {
   const banChul = recs.filter(r => r.group === '반출');
   const banIp   = recs.filter(r => r.group === '반입');
 
+  const TF_FIELDS = ['name','place','qty','split','exclude','childExclude','merge','fullSplit','kwon','inPlace'];
+  const TF_NUM = new Set(['qty','split','exclude','childExclude','merge','fullSplit','kwon']);
   function calcDB(r) { return r.qty + r.split - r.exclude - r.merge - r.fullSplit; }
   function sumField(arr, fn) { return arr.reduce((s, r) => s + fn(r), 0); }
 
   function groupRows(arr, groupLabel) {
     let rows = '';
     arr.forEach((r, i) => {
+      const idx = recs.indexOf(r);
       const db = calcDB(r);
-      rows += `<tr>
+      rows += `<tr class="tf-row" data-idx="${idx}" tabindex="0">
         ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
-        <td>${esc(r.name)}</td>
-        <td>${esc(r.place)}</td>
-        <td class="num">${fmt(r.qty)}</td>
-        <td class="num">${fmt(r.split)}</td>
-        <td class="num">${fmt(r.exclude)}</td>
-        <td class="num">${fmt(r.childExclude)}</td>
-        <td class="num">${fmt(r.merge)}</td>
-        <td class="num">${fmt(r.fullSplit)}</td>
-        <td class="num"><strong>${fmt(db)}</strong></td>
-        <td class="num">${fmt(r.kwon)}</td>
-        <td>${esc(r.inPlace)}</td>
-        <td><button class="btn btn-xs btn-danger" onclick="deleteTransferRow(${recs.indexOf(r)})">✕</button></td>
+        <td class="tf-cell" data-field="name">${esc(r.name)}</td>
+        <td class="tf-cell" data-field="place">${esc(r.place)}</td>
+        <td class="tf-cell num" data-field="qty">${fmt(r.qty)}</td>
+        <td class="tf-cell num" data-field="split">${fmt(r.split)}</td>
+        <td class="tf-cell num" data-field="exclude">${fmt(r.exclude)}</td>
+        <td class="tf-cell num" data-field="childExclude">${fmt(r.childExclude)}</td>
+        <td class="tf-cell num" data-field="merge">${fmt(r.merge)}</td>
+        <td class="tf-cell num" data-field="fullSplit">${fmt(r.fullSplit)}</td>
+        <td class="num tf-calc"><strong>${fmt(db)}</strong></td>
+        <td class="tf-cell num" data-field="kwon">${fmt(r.kwon)}</td>
+        <td class="tf-cell" data-field="inPlace">${esc(r.inPlace)}</td>
       </tr>`;
     });
-    // 합계 행
     const tQty = sumField(arr, r=>r.qty), tSplit = sumField(arr, r=>r.split);
     const tExclude = sumField(arr, r=>r.exclude), tChild = sumField(arr, r=>r.childExclude);
     const tMerge = sumField(arr, r=>r.merge), tFull = sumField(arr, r=>r.fullSplit);
@@ -574,7 +576,7 @@ function renderTransferTable(data) {
       <td class="num"><strong>${fmt(tFull)}</strong></td>
       <td class="num"><strong>${fmt(tDB)}</strong></td>
       <td class="num"><strong>${fmt(tKwon)}</strong></td>
-      <td colspan="2"></td>
+      <td></td>
     </tr>`;
     return rows;
   }
@@ -583,7 +585,8 @@ function renderTransferTable(data) {
   const allKwon = sumField(recs, r => r.kwon);
 
   return `
-    <div class="table-wrap"><table class="transfer-tbl">
+    <div class="caption-top mb-8">💡 셀을 <strong>더블클릭</strong>하거나 행 선택 후 <strong>F2</strong>를 눌러 편집 · Enter 저장 · Esc 취소</div>
+    <div class="table-wrap"><table class="transfer-tbl" id="transfer-tbl">
       <thead>
         <tr>
           <th rowspan="2" style="width:60px">구분</th>
@@ -593,7 +596,6 @@ function renderTransferTable(data) {
           <th colspan="5">반입</th>
           <th rowspan="2">권호수<br>구분</th>
           <th rowspan="2">반입장소</th>
-          <th rowspan="2" style="width:40px"></th>
         </tr>
         <tr>
           <th>반출수량<br>(철)</th>
@@ -612,15 +614,107 @@ function renderTransferTable(data) {
           <td colspan="3"><strong>반출입 수량 합계</strong></td>
           <td colspan="6" class="num"><strong>${fmt(allDB)}</strong></td>
           <td class="num"><strong>${fmt(allKwon)}</strong></td>
-          <td colspan="3"></td>
+          <td></td>
         </tr>
       </tbody>
     </table></div>
     <div class="btn-row mt-8">
       <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반출')">+ 반출 추가</button>
       <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반입')">+ 반입 추가</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteTransferRow()">🗑️ 선택행 삭제</button>
     </div>
   `;
+}
+
+function refreshTransfer() {
+  const data = loadData();
+  document.getElementById('transfer-section').innerHTML = renderTransferTable(data);
+  initTransferEditing();
+}
+
+function initTransferEditing() {
+  const tbl = document.getElementById('transfer-tbl');
+  if (!tbl) return;
+
+  // 더블클릭 → 셀 편집
+  tbl.addEventListener('dblclick', e => {
+    const cell = e.target.closest('.tf-cell');
+    if (!cell || cell.querySelector('input')) return;
+    startTfCellEdit(cell);
+  });
+
+  // F2 → 포커스 행의 첫 번째 셀 편집
+  tbl.addEventListener('keydown', e => {
+    if (e.key === 'F2') {
+      const row = document.activeElement?.closest('.tf-row');
+      if (row && !row.querySelector('input')) {
+        e.preventDefault();
+        const firstCell = row.querySelector('.tf-cell');
+        if (firstCell) startTfCellEdit(firstCell);
+      }
+    }
+  });
+}
+
+function startTfCellEdit(cell) {
+  const row = cell.closest('.tf-row');
+  const idx = parseInt(row.dataset.idx);
+  const field = cell.dataset.field;
+  const data = loadData();
+  const rec = data.transfer_records[idx];
+  if (!rec) return;
+
+  const TF_NUM = new Set(['qty','split','exclude','childExclude','merge','fullSplit','kwon']);
+  const isNum = TF_NUM.has(field);
+  const val = rec[field];
+
+  const input = document.createElement('input');
+  input.type = isNum ? 'number' : 'text';
+  input.value = val;
+  input.className = 'tf-edit-input';
+  input.style.width = '100%';
+  cell.textContent = '';
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+
+  function save() {
+    const newVal = isNum ? (parseInt(input.value) || 0) : input.value.trim();
+    const data = loadData();
+    data.transfer_records[idx][field] = newVal;
+    saveData(data);
+    refreshTransfer();
+  }
+
+  function cancel() {
+    refreshTransfer();
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); save(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      save();
+      // Tab 후 다음 셀 자동 편집
+      setTimeout(() => {
+        const tbl = document.getElementById('transfer-tbl');
+        if (!tbl) return;
+        const newRow = tbl.querySelector(`.tf-row[data-idx="${idx}"]`);
+        if (!newRow) return;
+        const cells = [...newRow.querySelectorAll('.tf-cell')];
+        const curField = field;
+        const curIdx = cells.findIndex(c => c.dataset.field === curField);
+        const nextCell = cells[curIdx + 1] || cells[0];
+        if (nextCell) startTfCellEdit(nextCell);
+      }, 50);
+    }
+  });
+
+  input.addEventListener('blur', () => {
+    // blur 시 저장 (Tab/Enter/Esc가 아닌 외부 클릭)
+    if (cell.contains(input)) save();
+  });
 }
 
 function addTransferRow(group) {
@@ -630,16 +724,18 @@ function addTransferRow(group) {
     childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
   });
   saveData(data);
-  document.getElementById('transfer-section').innerHTML = renderTransferTable(data);
+  refreshTransfer();
 }
 
-function deleteTransferRow(idx) {
-  const data = loadData();
-  if (!data.transfer_records || idx < 0 || idx >= data.transfer_records.length) return;
+function deleteTransferRow() {
+  const row = document.querySelector('.tf-row:focus, .tf-row:has(input)');
+  if (!row) { showToast('삭제할 행을 선택하세요 (클릭 후 삭제)', 'warning'); return; }
+  const idx = parseInt(row.dataset.idx);
   showConfirm('해당 항목을 삭제하시겠습니까?', () => {
+    const data = loadData();
     data.transfer_records.splice(idx, 1);
     saveData(data);
-    document.getElementById('transfer-section').innerHTML = renderTransferTable(data);
+    refreshTransfer();
     showToast('삭제 완료');
   });
 }
@@ -2594,6 +2690,8 @@ window.toggleHistAll = toggleHistAll;
 window.updateWorkerStats = updateWorkerStats;
 window.addTransferRow = addTransferRow;
 window.deleteTransferRow = deleteTransferRow;
+window.startTfCellEdit = startTfCellEdit;
+window.refreshTransfer = refreshTransfer;
 window.switchQTab = switchQTab;
 window.addQiRow = addQiRow;
 window.calcQiResult = calcQiResult;
