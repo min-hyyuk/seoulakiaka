@@ -850,6 +850,16 @@ th.cf-active .th-cf-icon { opacity:1; color:var(--primary); }
   .gauge-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
+/* 반입반출 현황 테이블 */
+.transfer-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.transfer-tbl th, .transfer-tbl td { border:1px solid var(--border); padding:6px 8px; text-align:center; white-space:nowrap; }
+.transfer-tbl th { background:var(--hover-bg); font-weight:600; font-size:11px; }
+.transfer-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; }
+.transfer-tbl .tf-group { background:var(--hover-bg); font-weight:700; writing-mode:horizontal-tb; vertical-align:middle; }
+.transfer-tbl .tf-subtotal { background:color-mix(in srgb, var(--primary) 6%, var(--card-bg)); }
+.transfer-tbl .tf-total { background:color-mix(in srgb, var(--primary) 12%, var(--card-bg)); }
+.transfer-tbl td:last-child { border:none; background:transparent; }
+
 @media (max-width: 600px) {
   .sidebar { width: 180px; min-width: 180px; }
   .gauge-grid { grid-template-columns: 1fr 1fr; }
