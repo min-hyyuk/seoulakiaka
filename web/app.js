@@ -1047,13 +1047,24 @@ function addInputRow(proc, focusFirst) {
     inp.addEventListener('keydown', e => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        // 어느 칸에서든 Enter → 새 행의 같은 위치 칸으로 이동
-        const newRow = addInputRow(proc, false);
-        if (newRow) {
-          const newInputs = [...newRow.querySelectorAll('input[type="text"]')];
-          const target = newInputs[idx] || newInputs[0];
-          target?.focus();
-          target?.select?.();
+        if (idx === 0) {
+          // 레이블 칸 → 새 행 추가 후 레이블 칸 포커스
+          const newRow = addInputRow(proc, false);
+          if (newRow) {
+            const firstInp = newRow.querySelector('input[type="text"]');
+            firstInp?.focus();
+          }
+        } else {
+          // 권/건/면/비고 칸 → 다음 기존 행의 같은 칸으로 이동 (엑셀처럼)
+          const tbody = row.closest('tbody');
+          const allRows = [...tbody.rows];
+          const curRowIdx = allRows.indexOf(row);
+          const nextRow = allRows[curRowIdx + 1];
+          if (nextRow) {
+            const nextInputs = [...nextRow.querySelectorAll('input[type="text"]')];
+            const target = nextInputs[idx];
+            if (target) { target.focus(); target.select?.(); }
+          }
         }
       } else if (e.key === 'ArrowRight' && inp.selectionStart === inp.value.length) {
         // 커서가 끝에 있을 때 → 다음 칸
