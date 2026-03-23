@@ -1027,15 +1027,15 @@ function addInputRow(proc, focusFirst) {
   if (!tbody) return null;
   const row = tbody.insertRow();
   if (proc==='분류') {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" value="1" style="width:60px"></td><td><input type="text" inputmode="numeric" value="0" style="width:60px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="권" style="width:60px"></td><td><input type="text" inputmode="numeric" placeholder="건" style="width:60px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (proc==='문서스캔') {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" value="0" style="width:70px"></td><td style="text-align:center"><input type="checkbox"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="면" style="width:70px"></td><td style="text-align:center"><input type="checkbox"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (proc==='도면스캔') {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" value="0" style="width:70px"></td><td style="text-align:center"><input type="checkbox"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="면" style="width:70px"></td><td style="text-align:center"><input type="checkbox"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (['면표시','보정'].includes(proc)) {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" value="0" style="width:70px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="면" style="width:70px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (proc==='색인') {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" value="0" style="width:70px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="건" style="width:70px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else {
     row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   }
