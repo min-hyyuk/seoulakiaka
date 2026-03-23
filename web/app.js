@@ -29,7 +29,6 @@ function loadData() {
       if (!d.error_labels) d.error_labels = [];
       if (!d.sampling_logs) d.sampling_logs = [];
       if (!d.daily_logs) d.daily_logs = [];
-      if (!d.transfer_records) d.transfer_records = getDefaultTransfers();
       return d;
     }
   } catch(e) {}
@@ -49,21 +48,8 @@ function getDefaultData() {
     labels: {},
     daily_logs: [],
     sampling_logs: [],
-    error_labels: [],
-    transfer_records: getDefaultTransfers()
+    error_labels: []
   };
-}
-
-function getDefaultTransfers() {
-  return [
-    { group:'반출', name:'01(서소문서고 3월1차) 1차', place:'서소문서고', qty:3878, split:58, exclude:14, childExclude:0, merge:20, fullSplit:0, kwon:7020, inPlace:'서소문서고' },
-    { group:'반출', name:'02(본관서고 아동센터문서)', place:'본관서고', qty:0, split:0, exclude:0, childExclude:0, merge:0, fullSplit:0, kwon:713, inPlace:'서소문서고(아동센터 문서일체)' },
-    { group:'반출', name:'03(본관서고 카드 제외문서)', place:'본관서고', qty:0, split:0, exclude:0, childExclude:232, merge:0, fullSplit:0, kwon:0, inPlace:'서소문서고(아동카드 공정제외 문서 임시반입)' },
-    { group:'반입', name:'01(본관서고 6월1차) 1차', place:'본관서고', qty:2342, split:1014, exclude:2, childExclude:0, merge:21, fullSplit:12, kwon:5004, inPlace:'본관서고' },
-    { group:'반입', name:'02(본관서고 7월1차) 2차', place:'본관서고', qty:1962, split:88, exclude:10, childExclude:232, merge:17, fullSplit:3, kwon:3517, inPlace:'본관서고' },
-    { group:'반입', name:'03(본관서고 9월1차) 3차', place:'본관서고', qty:426, split:13, exclude:0, childExclude:0, merge:0, fullSplit:0, kwon:764, inPlace:'본관서고' },
-    { group:'반입', name:'도로계획과 미정리기록물', place:'본관서고', qty:214, split:0, exclude:0, childExclude:0, merge:0, fullSplit:0, kwon:214, inPlace:'' },
-  ];
 }
 
 // ============================================================
@@ -500,9 +486,6 @@ function renderDashboard(data, c) {
       <thead><tr><th>공정</th><th>목표(권/면)</th><th>공정율</th><th>잔여량</th><th>실적 세부</th></tr></thead>
       <tbody>${tRows}</tbody>
     </table></div></div>
-    <hr class="divider">
-    <div class="section-header">반입반출 현황</div>
-    <div class="card" id="transfer-section">${renderTransferTable(data)}</div>
     ${hasData ? `
     <hr class="divider">
     <div class="section-header">일별 공정 추이</div>
@@ -521,123 +504,6 @@ function renderDashboard(data, c) {
   }
   if (hasData) buildDashChart('daily', getDailyAgg(data));
 }
-
-// ============================================================
-// 반입반출 현황 테이블
-// ============================================================
-function renderTransferTable(data) {
-  const recs = data.transfer_records || [];
-  const banChul = recs.filter(r => r.group === '반출');
-  const banIp   = recs.filter(r => r.group === '반입');
-
-  function calcDB(r) { return r.qty + r.split - r.exclude - r.merge - r.fullSplit; }
-  function sumField(arr, fn) { return arr.reduce((s, r) => s + fn(r), 0); }
-
-  function groupRows(arr, groupLabel) {
-    let rows = '';
-    arr.forEach((r, i) => {
-      const db = calcDB(r);
-      rows += `<tr>
-        ${i === 0 ? `<td class="tf-group" rowspan="${arr.length + 1}">${groupLabel}</td>` : ''}
-        <td>${esc(r.name)}</td>
-        <td>${esc(r.place)}</td>
-        <td class="num">${fmt(r.qty)}</td>
-        <td class="num">${fmt(r.split)}</td>
-        <td class="num">${fmt(r.exclude)}</td>
-        <td class="num">${fmt(r.childExclude)}</td>
-        <td class="num">${fmt(r.merge)}</td>
-        <td class="num">${fmt(r.fullSplit)}</td>
-        <td class="num"><strong>${fmt(db)}</strong></td>
-        <td class="num">${fmt(r.kwon)}</td>
-        <td>${esc(r.inPlace)}</td>
-        <td><button class="btn btn-xs btn-danger" onclick="deleteTransferRow(${recs.indexOf(r)})">✕</button></td>
-      </tr>`;
-    });
-    // 합계 행
-    const tQty = sumField(arr, r=>r.qty), tSplit = sumField(arr, r=>r.split);
-    const tExclude = sumField(arr, r=>r.exclude), tChild = sumField(arr, r=>r.childExclude);
-    const tMerge = sumField(arr, r=>r.merge), tFull = sumField(arr, r=>r.fullSplit);
-    const tDB = sumField(arr, calcDB), tKwon = sumField(arr, r=>r.kwon);
-    rows += `<tr class="tf-subtotal">
-      <td colspan="2"><strong>합계</strong></td>
-      <td class="num"><strong>${fmt(tQty)}</strong></td>
-      <td class="num"><strong>${fmt(tSplit)}</strong></td>
-      <td class="num"><strong>${fmt(tExclude)}</strong></td>
-      <td class="num"><strong>${fmt(tChild)}</strong></td>
-      <td class="num"><strong>${fmt(tMerge)}</strong></td>
-      <td class="num"><strong>${fmt(tFull)}</strong></td>
-      <td class="num"><strong>${fmt(tDB)}</strong></td>
-      <td class="num"><strong>${fmt(tKwon)}</strong></td>
-      <td colspan="2"></td>
-    </tr>`;
-    return rows;
-  }
-
-  const allDB = sumField(recs, r => r.qty + r.split - r.exclude - r.merge - r.fullSplit);
-  const allKwon = sumField(recs, r => r.kwon);
-
-  return `
-    <div class="table-wrap"><table class="transfer-tbl">
-      <thead>
-        <tr>
-          <th rowspan="2" style="width:60px">구분</th>
-          <th rowspan="2">회차</th>
-          <th rowspan="2">반출장소</th>
-          <th colspan="2">반출</th>
-          <th colspan="5">반입</th>
-          <th rowspan="2">권호수<br>구분</th>
-          <th rowspan="2">반입장소</th>
-          <th rowspan="2" style="width:40px"></th>
-        </tr>
-        <tr>
-          <th>반출수량<br>(철)</th>
-          <th>분철</th>
-          <th>제외</th>
-          <th>아동카드<br>제외</th>
-          <th>합권</th>
-          <th>전권분철</th>
-          <th>DB구축<br>완료</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${groupRows(banChul, '반출')}
-        ${groupRows(banIp, '반입')}
-        <tr class="tf-total">
-          <td colspan="3"><strong>반출입 수량 합계</strong></td>
-          <td colspan="6" class="num"><strong>${fmt(allDB)}</strong></td>
-          <td class="num"><strong>${fmt(allKwon)}</strong></td>
-          <td colspan="3"></td>
-        </tr>
-      </tbody>
-    </table></div>
-    <div class="btn-row mt-8">
-      <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반출')">+ 반출 추가</button>
-      <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반입')">+ 반입 추가</button>
-    </div>
-  `;
-}
-
-function addTransferRow(group) {
-  const data = loadData();
-  data.transfer_records.push({
-    group, name:'', place:'', qty:0, split:0, exclude:0,
-    childExclude:0, merge:0, fullSplit:0, kwon:0, inPlace:''
-  });
-  saveData(data);
-  document.getElementById('transfer-section').innerHTML = renderTransferTable(data);
-}
-
-function deleteTransferRow(idx) {
-  const data = loadData();
-  if (!data.transfer_records || idx < 0 || idx >= data.transfer_records.length) return;
-  showConfirm('해당 항목을 삭제하시겠습니까?', () => {
-    data.transfer_records.splice(idx, 1);
-    saveData(data);
-    document.getElementById('transfer-section').innerHTML = renderTransferTable(data);
-    showToast('삭제 완료');
-  });
-}
-
 
 function switchDashTab(tab) {
   document.getElementById('tb-daily').classList.toggle('active', tab==='daily');
@@ -2586,8 +2452,6 @@ window.saveHistEdit = saveHistEdit;
 window.deleteSelected = deleteSelected;
 window.toggleHistAll = toggleHistAll;
 window.updateWorkerStats = updateWorkerStats;
-window.addTransferRow = addTransferRow;
-window.deleteTransferRow = deleteTransferRow;
 window.switchQTab = switchQTab;
 window.addQiRow = addQiRow;
 window.calcQiResult = calcQiResult;
