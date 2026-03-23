@@ -858,13 +858,7 @@ th.cf-active .th-cf-icon { opacity:1; color:var(--primary); }
 .transfer-tbl .tf-group { background:var(--hover-bg); font-weight:700; writing-mode:horizontal-tb; vertical-align:middle; }
 .transfer-tbl .tf-subtotal { background:color-mix(in srgb, var(--primary) 6%, var(--card-bg)); }
 .transfer-tbl .tf-total { background:color-mix(in srgb, var(--primary) 12%, var(--card-bg)); }
-.tf-row { cursor:pointer; }
-.tf-row:focus, .tf-row:hover { background:color-mix(in srgb, var(--primary) 6%, var(--card-bg)); outline:none; }
-.tf-cell { cursor:pointer; }
-.tf-cell:hover { background:color-mix(in srgb, var(--primary) 10%, var(--card-bg)); }
-.tf-edit-input { width:100%; padding:2px 4px; border:1.5px solid var(--primary); border-radius:3px; font-size:12px; background:var(--card-bg); color:var(--text); text-align:inherit; outline:none; }
-.tf-edit-input:focus { box-shadow:0 0 0 2px color-mix(in srgb, var(--primary) 30%, transparent); }
-.tf-calc { background:color-mix(in srgb, var(--primary) 4%, var(--card-bg)); }
+.transfer-tbl td:last-child { border:none; background:transparent; }
 
 @media (max-width: 600px) {
   .sidebar { width: 180px; min-width: 180px; }
