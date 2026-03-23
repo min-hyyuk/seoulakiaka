@@ -190,12 +190,12 @@ function renderSidebar() {
     '📅 ' + data.project.start_date + ' ~ ' + data.project.end_date;
 
   const pages = [
-    { icon:'📈', name:'대시보드' },
+    { icon:'📈', name:'대시보드', sep:true },
     { icon:'📋', name:'공정진행표' },
     { icon:'📅', name:'일별 총괄표' },
     { icon:'👥', name:'작업자별 현황' },
-    { icon:'📦', name:'반입반출 현황' },
-    { icon:'🔍', name:'품질검사' },
+    { icon:'📦', name:'반입반출 현황', sep:true },
+    { icon:'🔍', name:'품질검사', sep:true },
     { icon:'⚙️', name:'설정' },
   ];
 
@@ -203,6 +203,7 @@ function renderSidebar() {
   for (const p of pages) {
     const a = state.page === p.name ? 'active' : '';
     html += `<div class="nav-item ${a}" onclick="navigate('${p.name}')">${p.icon} ${p.name}</div>`;
+    if (p.sep) html += '<div class="nav-divider"></div>';
     if (p.name === '공정진행표' && state.page === '공정진행표') {
       html += '<div class="nav-sub">';
       for (const sub of ['전체 현황',...PROCESSES]) {

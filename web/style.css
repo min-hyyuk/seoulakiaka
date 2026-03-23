@@ -102,6 +102,7 @@ body {
 .nav-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
 .nav-item.active { background: var(--sidebar-active-bg); color: var(--sidebar-active-text); }
 
+.nav-divider { height:1px; margin:6px 12px; border-top:1px dashed rgba(255,255,255,0.2); }
 .nav-sub { padding-left: 10px; margin-top: 2px; }
 .nav-sub .nav-item { font-size: 12px; padding: 6px 12px; }
 
