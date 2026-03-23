@@ -2692,7 +2692,14 @@ function showColFilter(th, tableId, colIdx) {
 
   const div = document.createElement('div');
   div.className = 'col-filter-dropdown';
+  const sortKey = `${tableId}:${colIdx}`;
+  const curSort = window._colSorts?.[sortKey] || '';
   div.innerHTML = `
+    <div class="cfd-sort">
+      <button class="cfd-sort-btn ${curSort==='asc'?'active':''}" onclick="applyCFSort('${tableId}',${colIdx},'asc',this)">▲ 오름차순</button>
+      <button class="cfd-sort-btn ${curSort==='desc'?'active':''}" onclick="applyCFSort('${tableId}',${colIdx},'desc',this)">▼ 내림차순</button>
+    </div>
+    <hr class="cfd-divider">
     <div class="cfd-search"><input type="text" placeholder="검색..." oninput="cfdSearch(this)"></div>
     <div class="cfd-items">
       <label class="cfd-item cfd-all-item">
@@ -2722,6 +2729,39 @@ function showColFilter(th, tableId, colIdx) {
       }
     });
   }, 10);
+}
+
+if (!window._colSorts) window._colSorts = {};
+
+function applyCFSort(tableId, colIdx, dir, btn) {
+  const key = `${tableId}:${colIdx}`;
+  // 같은 방향 다시 클릭하면 정렬 해제
+  if (window._colSorts[key] === dir) {
+    delete window._colSorts[key];
+  } else {
+    window._colSorts[key] = dir;
+  }
+
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.tBodies[0];
+  if (!tbody) return;
+
+  const rows = [...tbody.rows];
+  rows.sort((a, b) => {
+    const aVal = a.cells[colIdx]?.textContent.trim() || '';
+    const bVal = b.cells[colIdx]?.textContent.trim() || '';
+    const aNum = parseFloat(aVal.replace(/,/g, ''));
+    const bNum = parseFloat(bVal.replace(/,/g, ''));
+    let cmp;
+    if (!isNaN(aNum) && !isNaN(bNum)) cmp = aNum - bNum;
+    else cmp = aVal.localeCompare(bVal, 'ko');
+    return window._colSorts[key] === 'desc' ? -cmp : cmp;
+  });
+  for (const row of rows) tbody.appendChild(row);
+
+  document.querySelectorAll('.col-filter-dropdown').forEach(d => d.remove());
+  updateCFIndicators(tableId);
 }
 
 function cfdSearch(input) {
@@ -2834,6 +2874,7 @@ function toggleScanChildren(parentRow) {
 }
 window.toggleScanChildren = toggleScanChildren;
 window.showColFilter = showColFilter;
+window.applyCFSort = applyCFSort;
 window.cfdSearch = cfdSearch;
 window.cfdToggleAll = cfdToggleAll;
 window.applyCFD = applyCFD;

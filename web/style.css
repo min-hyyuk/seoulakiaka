@@ -830,6 +830,10 @@ textarea { resize: vertical; min-height: 80px; }
 
 /* 컬럼 헤더 드롭다운 필터 */
 .col-filter-dropdown { position:fixed; background:#fff; border:1px solid var(--border); border-radius:8px; box-shadow:0 4px 20px rgba(0,0,0,.25); z-index:9999; min-width:180px; max-width:260px; }
+.cfd-sort { display:flex; gap:4px; padding:8px 8px 0; }
+.cfd-sort-btn { flex:1; padding:5px 4px; border:1px solid var(--border); border-radius:4px; background:var(--hover-bg); color:var(--text); font-size:11px; cursor:pointer; }
+.cfd-sort-btn:hover { background:color-mix(in srgb, var(--primary) 15%, #fff); }
+.cfd-sort-btn.active { background:var(--primary); color:#fff; border-color:var(--primary); }
 .cfd-search { padding:8px 8px 4px; }
 .cfd-search input { width:100%; padding:4px 8px; border:1px solid var(--border); border-radius:4px; font-size:12px; background:var(--bg); color:var(--text); box-sizing:border-box; }
 .cfd-items { max-height:220px; overflow-y:auto; padding:4px; }
