@@ -2089,6 +2089,7 @@ function renderTransferPage(data, c) {
           <span class="tf-link-num">${bs.total}</span>
           ${r.qty > 0 ? `<div class="tf-mini-bar"><div class="tf-mini-fill" style="width:${pctBar}%"></div></div>` : ''}
         </td>
+        <td class="tf-del"><button class="btn btn-xs btn-danger" onclick="deleteTransferRow(${idx},event)">✕</button></td>
       </tr>`;
     });
     // 합계
@@ -2102,6 +2103,7 @@ function renderTransferPage(data, c) {
       <td class="num"><strong>${fmt(sums[6])}</strong></td>
       <td></td>
       <td class="num"><strong>${tLinked}</strong></td>
+      <td></td>
     </tr>`;
     return rows;
   }
@@ -2132,6 +2134,7 @@ function renderTransferPage(data, c) {
             <th rowspan="2">권호수<br>구분</th>
             <th rowspan="2">반입장소</th>
             <th rowspan="2">연결<br>레이블</th>
+            <th rowspan="2" style="width:36px"></th>
           </tr>
           <tr>
             <th>반출수량<br>(철)</th>
@@ -2152,13 +2155,13 @@ function renderTransferPage(data, c) {
             <td class="num"><strong>${fmt(allKwon)}</strong></td>
             <td></td>
             <td class="num"><strong>${allLinked}</strong></td>
-          </tr>` : '<tr><td colspan="13" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
+            <td></td>
+          </tr>` : '<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--text-muted)">반입반출 데이터가 없습니다. 엑셀 업로드 또는 수동 추가를 해주세요.</td></tr>'}
         </tbody>
       </table></div>
       <div class="btn-row mt-8">
         <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반출')">+ 반출 추가</button>
         <button class="btn btn-secondary btn-sm" onclick="addTransferRow('반입')">+ 반입 추가</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteTransferRow()">🗑️ 선택행 삭제</button>
       </div>
     </div>
     <div class="card">
@@ -2309,10 +2312,8 @@ function addTransferRow(group) {
   renderTransferPage(data, document.getElementById('main-content'));
 }
 
-function deleteTransferRow() {
-  const row = document.querySelector('.tf-row:focus, .tf-row:has(input)');
-  if (!row) { showToast('삭제할 행을 선택(클릭)하세요', 'warning'); return; }
-  const idx = parseInt(row.dataset.idx);
+function deleteTransferRow(idx, e) {
+  if (e) e.stopPropagation();
   showConfirm('해당 항목을 삭제하시겠습니까?', () => {
     const data = loadData();
     data.transfer_records.splice(idx, 1);
