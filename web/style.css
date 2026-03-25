@@ -808,6 +808,11 @@ textarea { resize: vertical; min-height: 80px; }
 /* 편집 중인 행 */
 .hist-row.editing { background: #fffbeb !important; }
 .hist-row.editing:hover { background: #fffbeb !important; }
+.he-editing { background: #eff6ff !important; }
+.he-cell-input { width:100%; padding:3px 6px; border:1.5px solid var(--primary); border-radius:4px; font-size:13px; background:#fff; color:var(--text); outline:none; box-sizing:border-box; }
+.he-cell-input:focus { box-shadow:0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent); }
+.he:not(.he-ro) { cursor:pointer; }
+.he:not(.he-ro):hover { background:color-mix(in srgb, var(--primary) 8%, #fff); }
 
 /* 편집 가능 셀 */
 .he { }

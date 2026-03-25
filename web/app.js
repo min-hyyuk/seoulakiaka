@@ -1232,17 +1232,22 @@ function renderHistTable(proc) {
   const tbl = document.getElementById('hist-tbl');
   if (!tbl) return;
 
-  // 더블클릭 → 해당 행 편집 시작
+  // 더블클릭 → 해당 셀 편집 시작
   tbl.addEventListener('dblclick', e => {
+    const cell = e.target.closest('.he:not(.he-ro)');
     const row = e.target.closest('tr.hist-row');
-    if (row && !row.classList.contains('editing')) startRowEdit(row, workers);
+    if (cell && row) { e.preventDefault(); startCellEdit(cell, row, workers); }
   });
 
-  // F2 → 포커스된 행 편집 시작
+  // F2 → 포커스된 행의 첫 편집 가능 셀
   tbl.addEventListener('keydown', e => {
     if (e.key === 'F2') {
       const row = document.activeElement?.closest('tr.hist-row');
-      if (row && !row.classList.contains('editing')) { e.preventDefault(); startRowEdit(row, workers); }
+      if (row && !row.querySelector('.he-editing')) {
+        e.preventDefault();
+        const firstCell = row.querySelector('.he:not(.he-ro)');
+        if (firstCell) startCellEdit(firstCell, row, workers);
+      }
     }
   });
 
@@ -1274,7 +1279,163 @@ function deleteSelected(proc) {
   });
 }
 
-// ── 인라인 편집 (더블클릭 / F2) ──────────────────────────────
+// ── 셀 단위 인라인 편집 ──────────────────────────────────────
+function startCellEdit(cell, row, workers) {
+  if (cell.classList.contains('he-editing')) return;
+  const proc     = row.dataset.proc;
+  const labelNum = row.dataset.label;
+  const data     = loadData();
+  const entry    = data.labels[labelNum]?.[proc] || {};
+  const field    = cell.dataset.field;
+  if (!field) return;
+
+  cell.classList.add('he-editing');
+  const origVal = cell.textContent.trim();
+
+  let widget;
+  if (field === 'date') {
+    widget = document.createElement('input');
+    widget.type = 'date'; widget.value = entry.date || origVal;
+  } else if (field === 'worker') {
+    widget = document.createElement('select');
+    const current = entry.worker || origVal;
+    widget.innerHTML = workers.map(w => `<option${w===current?' selected':''}>${esc(w)}</option>`).join('');
+    if (!workers.length) { widget = document.createElement('input'); widget.type='text'; widget.value=current; }
+  } else if (field === 'note') {
+    widget = document.createElement('input');
+    widget.type = 'text'; widget.value = entry.note ?? origVal;
+  } else {
+    widget = document.createElement('input');
+    widget.type = 'text'; widget.inputMode = 'numeric';
+    widget.value = entry[field] ?? origVal;
+  }
+  widget.className = 'he-cell-input';
+  widget.dataset.field = field;
+  cell.innerHTML = '';
+  cell.appendChild(widget);
+  widget.focus();
+  widget.select?.();
+
+  function saveCellEdit() {
+    const d = loadData();
+    if (!d.labels[labelNum]?.[proc]) { cancelCellEdit(); return; }
+    const e = d.labels[labelNum][proc];
+    const v = widget.value;
+    if (field === 'date')   e.date   = v;
+    if (field === 'worker') e.worker = v;
+    if (field === 'note')   e.note   = v;
+    if (field === 'kwon')   e.kwon   = parseInt(v)||0;
+    if (field === 'gun')    e.gun    = parseInt(v)||0;
+    if (field === 'myun')   e.myun   = parseInt(v)||0;
+    saveData(d);
+    renderHistTable(proc);
+    renderProcDaily(proc);
+  }
+
+  function cancelCellEdit() {
+    cell.classList.remove('he-editing');
+    cell.textContent = origVal;
+  }
+
+  function getEditableCells() {
+    return [...row.querySelectorAll('.he:not(.he-ro)')];
+  }
+
+  function moveTo(targetCell) {
+    saveCellAndMoveTo(targetCell);
+  }
+
+  function saveCellAndMoveTo(targetCell) {
+    // 현재 셀 저장
+    const d = loadData();
+    if (d.labels[labelNum]?.[proc]) {
+      const e = d.labels[labelNum][proc];
+      const v = widget.value;
+      if (field === 'date')   e.date   = v;
+      if (field === 'worker') e.worker = v;
+      if (field === 'note')   e.note   = v;
+      if (field === 'kwon')   e.kwon   = parseInt(v)||0;
+      if (field === 'gun')    e.gun    = parseInt(v)||0;
+      if (field === 'myun')   e.myun   = parseInt(v)||0;
+      saveData(d);
+    }
+    cell.classList.remove('he-editing');
+    // 원래 값 복원 (renderHistTable 안 하고 빠르게 이동)
+    const newData = loadData();
+    const newEntry = newData.labels[labelNum]?.[proc] || {};
+    cell.textContent = field === 'date' ? (newEntry.date||'') :
+                       field === 'worker' ? (newEntry.worker||'') :
+                       field === 'note' ? (newEntry.note||'') :
+                       String(newEntry[field]||0);
+    // 다음 셀 편집 시작
+    if (targetCell) {
+      const targetRow = targetCell.closest('tr.hist-row');
+      const tw = targetRow ? (newData.workers || []) : workers;
+      startCellEdit(targetCell, targetCell.closest('tr.hist-row'), tw);
+    }
+  }
+
+  let saved = false;
+  widget.addEventListener('keydown', e => {
+    const cells = getEditableCells();
+    const curIdx = cells.indexOf(cell);
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saved = true;
+      // Enter → 아래 행의 같은 필드로 이동
+      const allRows = [...row.closest('tbody').querySelectorAll('tr.hist-row')];
+      const rowIdx = allRows.indexOf(row);
+      const nextRow = allRows[rowIdx + 1];
+      if (nextRow) {
+        const nextCell = nextRow.querySelector(`.he[data-field="${field}"]`);
+        if (nextCell) { saveCellAndMoveTo(nextCell); return; }
+      }
+      saveCellEdit();
+    } else if (e.key === 'Escape') {
+      e.preventDefault(); saved = true; cancelCellEdit();
+    } else if (e.key === 'Tab') {
+      e.preventDefault(); saved = true;
+      const next = e.shiftKey ? cells[curIdx - 1] : cells[curIdx + 1];
+      if (next) saveCellAndMoveTo(next);
+      else saveCellEdit();
+    } else if (e.key === 'ArrowRight' && widget.type !== 'date' && widget.type !== 'select-one' &&
+               widget.selectionStart === widget.value.length) {
+      const next = cells[curIdx + 1];
+      if (next) { e.preventDefault(); saved = true; saveCellAndMoveTo(next); }
+    } else if (e.key === 'ArrowLeft' && widget.type !== 'date' && widget.type !== 'select-one' &&
+               widget.selectionStart === 0) {
+      const prev = cells[curIdx - 1];
+      if (prev) { e.preventDefault(); saved = true; saveCellAndMoveTo(prev); }
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault(); saved = true;
+      const allRows = [...row.closest('tbody').querySelectorAll('tr.hist-row')];
+      const rowIdx = allRows.indexOf(row);
+      const prevRow = allRows[rowIdx - 1];
+      if (prevRow) {
+        const prevCell = prevRow.querySelector(`.he[data-field="${field}"]`);
+        if (prevCell) saveCellAndMoveTo(prevCell);
+        else saveCellEdit();
+      } else saveCellEdit();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault(); saved = true;
+      const allRows = [...row.closest('tbody').querySelectorAll('tr.hist-row')];
+      const rowIdx = allRows.indexOf(row);
+      const nextRow = allRows[rowIdx + 1];
+      if (nextRow) {
+        const nextCell = nextRow.querySelector(`.he[data-field="${field}"]`);
+        if (nextCell) saveCellAndMoveTo(nextCell);
+        else saveCellEdit();
+      } else saveCellEdit();
+    }
+  });
+
+  widget.addEventListener('blur', () => {
+    setTimeout(() => { if (!saved && cell.classList.contains('he-editing')) saveCellEdit(); }, 150);
+  });
+}
+
+// ── 행 단위 인라인 편집 (레거시, 모달 편집용) ─────────────────
 function startRowEdit(row, workers) {
   row.classList.add('editing');
   const proc     = row.dataset.proc;
@@ -2727,14 +2888,19 @@ function applyCFSort(tableId, colIdx, dir, btn) {
   if (!tbody) return;
 
   const rows = [...tbody.rows];
+  const isDate = v => /^\d{4}-\d{2}-\d{2}$/.test(v) || /^\d{2}-\d{2}$/.test(v);
   rows.sort((a, b) => {
     const aVal = a.cells[colIdx]?.textContent.trim() || '';
     const bVal = b.cells[colIdx]?.textContent.trim() || '';
-    const aNum = parseFloat(aVal.replace(/,/g, ''));
-    const bNum = parseFloat(bVal.replace(/,/g, ''));
     let cmp;
-    if (!isNaN(aNum) && !isNaN(bNum)) cmp = aNum - bNum;
-    else cmp = aVal.localeCompare(bVal, 'ko');
+    if (isDate(aVal) && isDate(bVal)) {
+      cmp = aVal.localeCompare(bVal);
+    } else {
+      const aNum = parseFloat(aVal.replace(/,/g, ''));
+      const bNum = parseFloat(bVal.replace(/,/g, ''));
+      if (!isNaN(aNum) && !isNaN(bNum)) cmp = aNum - bNum;
+      else cmp = aVal.localeCompare(bVal, 'ko');
+    }
     return window._colSorts[key] === 'desc' ? -cmp : cmp;
   });
   for (const row of rows) tbody.appendChild(row);
