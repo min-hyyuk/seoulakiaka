@@ -1957,6 +1957,39 @@ function renderQTab0(data) {
   const totalChecked = checkedMyun + checkedGun;
   const errRate = totalChecked > 0 ? (errors.length / totalChecked * 100).toFixed(2) : '0.00';
 
+  // ── 재작업 자동 동기화 ──────────────────────────────────
+  const existingErrs = data.error_labels || [];
+  const existingKeys = new Set(existingErrs.map(e => `${e.label}||${e.error_type}`));
+  const currentKeys = new Set(errors.map(e => `${e.num}||${e.type}`));
+  let newCount = 0;
+  let resolvedCount = 0;
+
+  // 새 오류 자동 등록
+  for (const e of errors) {
+    const key = `${e.num}||${e.type}`;
+    if (!existingKeys.has(key)) {
+      data.error_labels.push({
+        date: todayStr(), label: e.num, process: '교차검증',
+        error_type: e.type, error_detail: e.detail,
+        inspector: '자동검증', rework_status: '대기'
+      });
+      newCount++;
+    }
+  }
+
+  // 해결된 오류 자동 완료 처리
+  for (const err of existingErrs) {
+    if (err.inspector !== '자동검증' || err.rework_status === '완료') continue;
+    const key = `${err.label}||${err.error_type}`;
+    if (!currentKeys.has(key)) {
+      err.rework_status = '완료';
+      err.rework_date = todayStr();
+      resolvedCount++;
+    }
+  }
+
+  if (newCount || resolvedCount) saveData(data);
+
   // 테이블 렌더링
   const errRows = errors.map(e =>
     `<tr><td>${esc(e.num)}</td><td>${esc(e.batch)}</td><td>${esc(e.box)}</td><td><span class="badge badge-ng">${esc(e.type)}</span></td><td>${esc(e.detail)}</td></tr>`
@@ -1965,7 +1998,11 @@ function renderQTab0(data) {
     `<tr><td>${esc(e.num)}</td><td>${esc(e.batch)}</td><td>${esc(e.box)}</td><td><span class="badge badge-wait">${esc(e.type)}</span></td><td>${esc(e.detail)}</td></tr>`
   ).join('');
 
+  const syncMsg = (newCount || resolvedCount)
+    ? `<div class="alert alert-info mb-8">🔄 재작업 자동 동기화: 신규 등록 ${newCount}건, 해결 완료 ${resolvedCount}건</div>` : '';
+
   document.getElementById('qtab-0').innerHTML = `
+    ${syncMsg}
     <div class="metrics-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
       <div class="metric-card"><div class="metric-label">면수 검증 대상</div><div class="metric-value">${checkedMyun}건</div></div>
       <div class="metric-card"><div class="metric-label">건수 검증 대상</div><div class="metric-value">${checkedGun}건</div></div>
