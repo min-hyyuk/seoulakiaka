@@ -1729,12 +1729,14 @@ function updateWorkerStats() {
   if (proc === '전체') {
     // ── 전체: 공정×작업자 피벗 테이블 ──────────────────────────
     const pivot = {};
-    for (const w of workersBase) pivot[w] = {};
+    const firstDate = {};
+    for (const w of workersBase) { pivot[w] = {}; firstDate[w] = ''; }
     for (const r of filtered) {
       if (!r.worker) continue;
       pivot[r.worker][r.proc]       = (pivot[r.worker][r.proc]||0)       + r.qty;
       if (r.proc === '분류')
         pivot[r.worker]['분류_kwon'] = (pivot[r.worker]['분류_kwon']||0) + r.kwon;
+      if (!firstDate[r.worker] || r.date < firstDate[r.worker]) firstDate[r.worker] = r.date;
     }
     const totalQty = w => PROCESSES.reduce((s,p) => s + (pivot[w][p]||0), 0);
     const workers = sort === 'desc' ? [...workersBase].sort((a,b) => totalQty(b)-totalQty(a))
@@ -1752,7 +1754,7 @@ function updateWorkerStats() {
         ? `<th style="font-size:11px;color:${PROCESS_COLORS[p]}">권호수</th><th style="font-size:11px;color:${PROCESS_COLORS[p]}">건</th>`
         : '<th></th>'
     ).join('');
-    const thead = `<tr><th rowspan="2">작업자</th>${theadCols}</tr><tr>${theadSub}</tr>`;
+    const thead = `<tr><th rowspan="2">작업자</th><th rowspan="2">첫 작업일</th>${theadCols}</tr><tr>${theadSub}</tr>`;
 
     const tbody = workers.map(w => {
       const cells = PROCESSES.map(p =>
@@ -1760,7 +1762,7 @@ function updateWorkerStats() {
           ? `<td>${fmt(pivot[w]['분류_kwon']||0)}</td><td>${fmt(pivot[w]['분류']||0)}</td>`
           : `<td>${fmt(pivot[w][p]||0)}</td>`
       ).join('');
-      return `<tr><td><span class="worker-chip">${esc(w)}</span></td>${cells}</tr>`;
+      return `<tr><td><span class="worker-chip">${esc(w)}</span></td><td>${firstDate[w]||''}</td>${cells}</tr>`;
     }).join('');
 
     const datasets = PROCESSES.map(p => ({
@@ -1789,10 +1791,11 @@ function updateWorkerStats() {
     const wStats = {};
     for (const r of filtered) {
       if (!r.worker) continue;
-      if (!wStats[r.worker]) wStats[r.worker] = { kwon:0, qty:0, days:new Set() };
+      if (!wStats[r.worker]) wStats[r.worker] = { kwon:0, qty:0, days:new Set(), firstDate:'' };
       wStats[r.worker].kwon += r.kwon;
       wStats[r.worker].qty  += r.qty;
       wStats[r.worker].days.add(r.date);
+      if (!wStats[r.worker].firstDate || r.date < wStats[r.worker].firstDate) wStats[r.worker].firstDate = r.date;
     }
     const workers = sort === 'desc' ? [...workersBase].sort((a,b) => (wStats[b]?.qty||0)-(wStats[a]?.qty||0))
                   : sort === 'asc'  ? [...workersBase].sort((a,b) => (wStats[a]?.qty||0)-(wStats[b]?.qty||0))
@@ -1805,6 +1808,7 @@ function updateWorkerStats() {
       const avgQty  = (s.qty  / days).toFixed(1);
       return `<tr>
         <td><span class="worker-chip" style="background:color-mix(in srgb,${color} 15%,#fff);color:${color}">${esc(w)}</span></td>
+        <td>${s.firstDate||''}</td>
         <td>${fmt(s.kwon)}</td><td>${(avgKwon)}/${kwonLabel}</td>
         <td>${fmt(s.qty)}</td><td>${avgQty}/${qtyLabel}</td>
         <td>${days}일</td>
@@ -1825,6 +1829,7 @@ function updateWorkerStats() {
         <div class="table-wrap"><table>
           <thead><tr>
             <th>작업자</th>
+            <th>첫 작업일</th>
             <th>${kwonLabel} 합계</th><th>일평균 ${kwonLabel}</th>
             <th>${qtyLabel} 합계</th><th>일평균 ${qtyLabel}</th>
             <th>작업일수</th>
