@@ -1246,7 +1246,7 @@ function renderHistTable(proc) {
   area.innerHTML = `
     <div class="caption mb-8">${summary}</div>
     <div class="caption-top">💡 행을 <strong>더블클릭</strong>하거나 선택 후 <strong>F2</strong>를 눌러 편집 · Enter 저장 · Esc 취소</div>
-    <div class="table-wrap"><table id="hist-tbl">
+    <div class="scroll-table-wrap"><table id="hist-tbl">
       <thead><tr>
         <th style="width:32px"><input type="checkbox" onchange="toggleHistAll(this)"></th>
         <th class="th-cf" onclick="showColFilter(this,'hist-tbl',1)">레이블<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'hist-tbl',2)">작업일<span class="th-cf-icon">▼</span></th><th class="th-cf" onclick="showColFilter(this,'hist-tbl',3)">작업자<span class="th-cf-icon">▼</span></th>${extraTh}<th class="th-cf" onclick="showColFilter(this,'hist-tbl',this.cellIndex)">비고<span class="th-cf-icon">▼</span></th>
