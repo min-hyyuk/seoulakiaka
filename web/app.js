@@ -1004,7 +1004,7 @@ function getInputCaption(proc) {
 }
 
 function getInputHeaders(proc) {
-  if (proc==='분류') return '<th>레이블</th><th>권</th><th>건</th><th>비고</th>';
+  if (proc==='분류') return '<th>레이블</th><th>건</th><th>권</th><th>비고</th>';
   if (proc==='문서스캔') return '<th>레이블</th><th>면</th><th>도면포함</th><th>비고</th>';
   if (proc==='도면스캔') return '<th>레이블</th><th>면</th><th>전체도면</th><th>비고</th>';
   if (['면표시','보정'].includes(proc)) return '<th>레이블</th><th>면</th><th>비고</th>';
@@ -1018,7 +1018,7 @@ function addInputRow(proc, focusFirst) {
   if (!tbody) return null;
   const row = tbody.insertRow();
   if (proc==='분류') {
-    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="권" style="width:60px"></td><td><input type="text" inputmode="numeric" placeholder="건" style="width:60px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
+    row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="건" style="width:60px"></td><td><input type="text" inputmode="numeric" placeholder="권" style="width:60px"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (proc==='문서스캔') {
     row.innerHTML = `<td><input type="text" placeholder="레이블번호"></td><td><input type="text" inputmode="numeric" placeholder="면" style="width:70px"></td><td style="text-align:center"><input type="checkbox"></td><td><input type="text" placeholder="비고"></td><td><button class="btn btn-xs btn-danger" onclick="this.closest('tr').remove()">✕</button></td>`;
   } else if (proc==='도면스캔') {
@@ -1114,8 +1114,8 @@ function saveProcessEntries(proc) {
     const e = { label };
     if (note) e.note = note;
     if (proc==='분류') {
-      e.kwon = parseInt(cells[1].querySelector('input')?.value)||0;
-      e.gun  = parseInt(cells[2].querySelector('input')?.value)||0;
+      e.gun  = parseInt(cells[1].querySelector('input')?.value)||0;
+      e.kwon = parseInt(cells[2].querySelector('input')?.value)||0;
     } else if (proc==='문서스캔') {
       e.myun = parseInt(cells[1].querySelector('input')?.value)||0;
       if (cells[2].querySelector('input')?.checked) e.domyun_type = '도면포함';
