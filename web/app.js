@@ -1135,15 +1135,25 @@ function saveProcessEntries(proc) {
   if (!entries.length) { showToast('입력할 데이터가 없습니다.','warning'); return; }
 
   const registry   = data.label_registry || {};
-  const unregistered = registry && Object.keys(registry).length
+  const hasRegistry = Object.keys(registry).length > 0;
+  const unregistered = hasRegistry
     ? entries.filter(e => !(e.label in registry)).map(e => e.label) : [];
   const duplicates = entries.filter(e => data.labels[e.label]?.[proc]);
-  const newEntries = entries.filter(e => !data.labels[e.label]?.[proc]);
+  // 미등록 레이블 제외
+  const validEntries = hasRegistry
+    ? entries.filter(e => e.label in registry) : entries;
+  const newEntries = validEntries.filter(e => !data.labels[e.label]?.[proc]);
 
   const msgEl = document.getElementById('inp-msg');
   let msgs = [];
-  if (unregistered.length) msgs.push(`<div class="alert alert-warning mt-8">⚠️ 미등록 레이블: ${unregistered.join(', ')}</div>`);
-  if (duplicates.length)   msgs.push(`<div class="alert alert-danger mt-8">⚠️ 이미 입력된 레이블 (건너뜀): ${duplicates.map(e=>e.label).join(', ')}</div>`);
+  if (unregistered.length) msgs.push(`<div class="alert alert-danger mt-8">🚫 미등록 레이블 (저장 차단): ${unregistered.join(', ')}<br><span style="font-size:12px">반입반출 현황에서 레이블을 먼저 등록하세요.</span></div>`);
+  if (duplicates.length) {
+    const dupDetails = duplicates.map(e => {
+      const ex = data.labels[e.label][proc];
+      return `${e.label} (${ex.date||'?'}, ${ex.worker||'?'})`;
+    });
+    msgs.push(`<div class="alert alert-warning mt-8">⚠️ 이미 입력된 레이블 (건너뜀):<br>${dupDetails.join('<br>')}</div>`);
+  }
   msgEl.innerHTML = msgs.join('');
 
   if (!newEntries.length) { showToast('저장할 신규 데이터가 없습니다.','warning'); return; }
