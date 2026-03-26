@@ -978,6 +978,7 @@ function renderProcessSheet(data, c, proc) {
         <div class="filter-item"><label>날짜</label><select id="hd" onchange="renderHistTable('${proc}')">${hdOpts}</select></div>
         <div class="filter-item"><label>상자번호</label><select id="hb" onchange="renderHistTable('${proc}')">${hbOpts}</select></div>
         <div class="filter-item"><label>레이블번호</label><input type="text" id="hl" placeholder="번호 검색..." oninput="renderHistTable('${proc}')" style="width:130px"></div>
+        <div class="filter-item" style="align-self:end"><button class="btn btn-secondary btn-sm" onclick="resetHistFilters('${esc(proc)}')">🔄 초기화</button></div>
       </div>
       <div id="hist-table-area"></div>
     </div>
@@ -1255,7 +1256,6 @@ function renderHistTable(proc) {
     </table></div>
     <div class="btn-row">
       <button class="btn btn-danger btn-sm" onclick="deleteSelected('${esc(proc)}')">🗑️ 선택 삭제</button>
-      <button class="btn btn-secondary btn-sm" onclick="clearAllFilters('hist-tbl')">🔄 필터 초기화</button>
     </div>
   `;
 
@@ -3045,6 +3045,13 @@ function clearAllFilters(tableId) {
   showToast('필터 초기화 완료', 'info');
 }
 
+function resetHistFilters(proc) {
+  clearAllFilters('hist-tbl');
+  ['hw','hd','hb'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  const hl = document.getElementById('hl'); if (hl) hl.value = '';
+  renderHistTable(proc);
+}
+
 function resetProgressFilters() {
   // 상단 드롭다운 필터도 초기화
   const ids = ['f-search','f-box','f-batch','f-stage','f-dom'];
@@ -3115,6 +3122,7 @@ function toggleScanChildren(parentRow) {
 window.toggleScanChildren = toggleScanChildren;
 window.showColFilter = showColFilter;
 window.clearAllFilters = clearAllFilters;
+window.resetHistFilters = resetHistFilters;
 window.filterQTable = filterQTable;
 window.resetProgressFilters = resetProgressFilters;
 window.applyCFSort = applyCFSort;
