@@ -2047,7 +2047,10 @@ function renderQTab1(data) {
     </div>
     <div class="card">
       <div class="card-title">검사 이력</div>
-      <div class="table-wrap"><table>
+      <div class="filter-row mb-8">
+        <div class="filter-item"><label>검색</label><input type="text" placeholder="레이블/공정/검사자" oninput="filterQTable(this,'q1-tbl')"></div>
+      </div>
+      <div class="table-wrap"><table id="q1-tbl">
         <thead><tr><th>날짜</th><th>유형</th><th>공정</th><th>검사건수</th><th>오류건수</th><th>오류율</th><th>품질률</th><th>검사자</th><th>판정</th></tr></thead>
         <tbody>${tRows}</tbody>
       </table></div>
@@ -2118,7 +2121,10 @@ function renderQTab2(data) {
     </div>
     <div class="card">
       <div class="card-title">오류 레이블 목록</div>
-      <div class="table-wrap"><table>
+      <div class="filter-row mb-8">
+        <div class="filter-item"><label>검색</label><input type="text" placeholder="레이블/공정/오류유형" oninput="filterQTable(this,'q2-err-tbl')"></div>
+      </div>
+      <div class="table-wrap"><table id="q2-err-tbl">
         <thead><tr><th>검사일</th><th>레이블</th><th>공정</th><th>오류유형</th><th>오류내용</th><th>검사자</th><th>재작업상태</th></tr></thead>
         <tbody>${errListRows}</tbody>
       </table></div>
@@ -2176,7 +2182,10 @@ function renderQTab3(data) {
     ${pending.length ? `
     <div class="card">
       <div class="card-title">재작업 대기 (${pending.length}건)</div>
-      <div class="table-wrap"><table>
+      <div class="filter-row mb-8">
+        <div class="filter-item"><label>검색</label><input type="text" placeholder="레이블/공정/오류유형" oninput="filterQTable(this,'q3-pending-tbl')"></div>
+      </div>
+      <div class="table-wrap"><table id="q3-pending-tbl">
         <thead><tr><th><input type="checkbox" onchange="toggleRwAll(this)"></th><th>검사일</th><th>레이블</th><th>공정</th><th>오류유형</th><th>오류내용</th></tr></thead>
         <tbody>${pendingRows}</tbody>
       </table></div>
@@ -2829,6 +2838,17 @@ function resetAllData() {
 // ============================================================
 // 초기화
 // ============================================================
+// ── 품질검사 테이블 검색 ────────────────────────────────────
+function filterQTable(input, tableId) {
+  const q = input.value.toLowerCase();
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  for (const row of table.tBodies[0]?.rows || []) {
+    const txt = row.textContent.toLowerCase();
+    row.style.display = txt.includes(q) ? '' : 'none';
+  }
+}
+
 // ── 글로벌 단축키 ──────────────────────────────────────────
 document.addEventListener('keydown', e => {
   // Ctrl+S → 현재 공정 시트 저장
@@ -3090,6 +3110,7 @@ function toggleScanChildren(parentRow) {
 window.toggleScanChildren = toggleScanChildren;
 window.showColFilter = showColFilter;
 window.clearAllFilters = clearAllFilters;
+window.filterQTable = filterQTable;
 window.resetProgressFilters = resetProgressFilters;
 window.applyCFSort = applyCFSort;
 window.cfdSearch = cfdSearch;
