@@ -632,6 +632,7 @@ function renderProgressOverview(data, c) {
       <div class="filter-item"><label>반입회차</label><select id="f-batch" onchange="applyProgressFilter()"><option>전체</option>${batchList.map(b=>`<option>${esc(b)}</option>`).join('')}</select></div>
       <div class="filter-item"><label>현재 단계</label><select id="f-stage" onchange="applyProgressFilter()"><option>전체</option>${stageOrder.map(s=>`<option>${esc(s)}</option>`).join('')}</select></div>
       <div class="filter-item"><label>도면유형</label><select id="f-dom" onchange="applyProgressFilter()"><option>전체</option><option>도면포함</option><option>전체도면</option><option>도면없음</option></select></div>
+      <div class="filter-item" style="align-self:end"><button class="btn btn-secondary btn-sm" onclick="clearAllFilters('progress-tbl');resetProgressFilters()">🔄 필터 초기화</button></div>
     </div>
     <div id="progress-table-area"></div>
     <hr class="divider">
@@ -965,8 +966,8 @@ function renderProcessSheet(data, c, proc) {
         </table>
       </div>
       <div class="btn-row">
-        <button class="btn btn-primary" onclick="saveProcessEntries('${proc}')">💾 저장</button>
-        <span class="caption" style="align-self:center">💡 Enter → 다음 행 추가 · Tab / 방향키 → 같은 행 칸 이동</span>
+        <button class="btn btn-primary" onclick="saveProcessEntries('${proc}')">💾 저장 (Ctrl+S)</button>
+        <span class="caption" style="align-self:center">💡 Enter → 다음 행 · ↑↓←→ → 셀 이동 · Ctrl+S → 저장</span>
       </div>
       <div id="inp-msg"></div>
     </div>
@@ -1056,11 +1057,31 @@ function addInputRow(proc, focusFirst) {
           }
         }
       } else if (e.key === 'ArrowRight' && inp.selectionStart === inp.value.length) {
-        // 커서가 끝에 있을 때 → 다음 칸
         if (idx < inputs.length - 1) { e.preventDefault(); inputs[idx + 1].focus(); inputs[idx + 1].select?.(); }
       } else if (e.key === 'ArrowLeft' && inp.selectionStart === 0) {
-        // 커서가 처음에 있을 때 → 이전 칸
         if (idx > 0) { e.preventDefault(); inputs[idx - 1].focus(); inputs[idx - 1].select?.(); }
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        const tbody = row.closest('tbody');
+        const allRows = [...tbody.rows];
+        const ri = allRows.indexOf(row);
+        const prevRow = allRows[ri - 1];
+        if (prevRow) {
+          const prevInputs = [...prevRow.querySelectorAll('input[type="text"]')];
+          const target = prevInputs[idx];
+          if (target) { target.focus(); target.select?.(); }
+        }
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        const tbody = row.closest('tbody');
+        const allRows = [...tbody.rows];
+        const ri = allRows.indexOf(row);
+        const nextRow = allRows[ri + 1];
+        if (nextRow) {
+          const nextInputs = [...nextRow.querySelectorAll('input[type="text"]')];
+          const target = nextInputs[idx];
+          if (target) { target.focus(); target.select?.(); }
+        }
       }
     });
   });
@@ -1222,7 +1243,10 @@ function renderHistTable(proc) {
       </tr></thead>
       <tbody>${tbody}</tbody>
     </table></div>
-    <div class="btn-row"><button class="btn btn-danger btn-sm" onclick="deleteSelected('${esc(proc)}')">🗑️ 선택 삭제</button></div>
+    <div class="btn-row">
+      <button class="btn btn-danger btn-sm" onclick="deleteSelected('${esc(proc)}')">🗑️ 선택 삭제</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearAllFilters('hist-tbl')">🔄 필터 초기화</button>
+    </div>
   `;
 
   applyAllColFilters('hist-tbl');
@@ -2795,6 +2819,16 @@ function resetAllData() {
 // ============================================================
 // 초기화
 // ============================================================
+// ── 글로벌 단축키 ──────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  // Ctrl+S → 현재 공정 시트 저장
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    const saveBtn = document.querySelector('#inp-tbody')?.closest('.card')?.querySelector('.btn-primary');
+    if (saveBtn) saveBtn.click();
+  }
+});
+
 function init() {
   // Import existing data.json if localStorage is empty
   const stored = localStorage.getItem(STORAGE_KEY);
@@ -2961,6 +2995,33 @@ function updateCFIndicators(tableId) {
   ths.forEach((th, i) => th.classList.toggle('cf-active', !!(window._colFilters[`${tableId}:${i}`])));
 }
 
+function clearAllFilters(tableId) {
+  // 컬럼 필터 전체 해제
+  for (const key of Object.keys(window._colFilters || {})) {
+    if (key.startsWith(tableId + ':')) delete window._colFilters[key];
+  }
+  // 정렬 전체 해제
+  for (const key of Object.keys(window._colSorts || {})) {
+    if (key.startsWith(tableId + ':')) delete window._colSorts[key];
+  }
+  document.querySelectorAll('.col-filter-dropdown').forEach(d => d.remove());
+  applyAllColFilters(tableId);
+  updateCFIndicators(tableId);
+  showToast('필터 초기화 완료', 'info');
+}
+
+function resetProgressFilters() {
+  // 상단 드롭다운 필터도 초기화
+  const ids = ['f-search','f-box','f-batch','f-stage','f-dom'];
+  for (const id of ids) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    if (el.tagName === 'SELECT') el.selectedIndex = 0;
+    else el.value = '';
+  }
+  applyProgressFilter();
+}
+
 // Expose to window for inline handlers
 window.navigate = navigate;
 window.switchDashTab = switchDashTab;
@@ -3018,6 +3079,8 @@ function toggleScanChildren(parentRow) {
 }
 window.toggleScanChildren = toggleScanChildren;
 window.showColFilter = showColFilter;
+window.clearAllFilters = clearAllFilters;
+window.resetProgressFilters = resetProgressFilters;
 window.applyCFSort = applyCFSort;
 window.cfdSearch = cfdSearch;
 window.cfdToggleAll = cfdToggleAll;
