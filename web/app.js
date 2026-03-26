@@ -1884,7 +1884,7 @@ function renderQuality(data, c) {
   c.innerHTML = `
     <div class="page-title">🔍 품질검사</div>
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchQTab(0)">레이블 검사</button>
+      <button class="tab-btn active" onclick="switchQTab(0)">자동 교차검증</button>
       <button class="tab-btn" onclick="switchQTab(1)">검사 현황</button>
       <button class="tab-btn" onclick="switchQTab(2)">오류 유형 분석</button>
       <button class="tab-btn" onclick="switchQTab(3)">재작업 관리</button>
@@ -1906,39 +1906,102 @@ function switchQTab(idx) {
 }
 
 function renderQTab0(data) {
-  const workers = data.workers || [];
-  const wOpts = workers.map(w=>`<option>${esc(w)}</option>`).join('');
-  const pOpts = PROCESSES.map(p=>`<option>${p}</option>`).join('');
-  const errOpts = ERROR_TYPES.map(e=>`<option>${e}</option>`).join('');
+  const labels = data.labels || {};
+  const registry = data.label_registry || {};
+
+  // ── 자동 교차 검증 ──────────────────────────────────────
+  const errors = [];
+  const exceptions = [];
+  let checkedMyun = 0, checkedGun = 0;
+
+  for (const [num, ld] of Object.entries(labels)) {
+    const box = registry[num]?.box || '';
+    const batch = registry[num]?.batch || '';
+
+    // 1. 면수 일치 검사 (면표시 / 문서스캔 / 보정)
+    const hasMyunProcs = ['면표시','문서스캔','보정'].filter(p => p in ld);
+    if (hasMyunProcs.length >= 2) {
+      checkedMyun++;
+      const myunVals = {};
+      for (const p of hasMyunProcs) myunVals[p] = ld[p].myun || 0;
+
+      // 도면스캔 면수도 참고
+      const hasDomScan = '도면스캔' in ld;
+      const domMyun = hasDomScan ? (ld['도면스캔'].myun||0) : 0;
+      const isDomType = ld['문서스캔']?.domyun_type === '도면포함' || ld['도면스캔']?.domyun_type === '전체도면';
+
+      const vals = Object.values(myunVals);
+      const allEqual = vals.every(v => v === vals[0]);
+
+      if (!allEqual) {
+        // 도면포함/전체도면이면서 도면스캔 미완료 → 예외
+        if (isDomType && !hasDomScan) {
+          exceptions.push({ num, box, batch, type:'면수 불일치 (도면 미완료)', detail: hasMyunProcs.map(p=>`${p}:${myunVals[p]}면`).join(', ') });
+        } else {
+          errors.push({ num, box, batch, type:'면수 불일치', detail: hasMyunProcs.map(p=>`${p}:${myunVals[p]}면`).join(', ') + (hasDomScan ? `, 도면스캔:${domMyun}면` : '') });
+        }
+      }
+    }
+
+    // 2. 건수 일치 검사 (분류.gun vs 색인.gun)
+    if ('분류' in ld && '색인' in ld) {
+      checkedGun++;
+      const bGun = ld['분류'].gun || 0;
+      const sGun = ld['색인'].gun || 0;
+      if (bGun !== sGun) {
+        errors.push({ num, box, batch, type:'건수 불일치', detail: `분류:${bGun}건, 색인:${sGun}건` });
+      }
+    }
+  }
+
+  const totalChecked = checkedMyun + checkedGun;
+  const errRate = totalChecked > 0 ? (errors.length / totalChecked * 100).toFixed(2) : '0.00';
+
+  // 테이블 렌더링
+  const errRows = errors.map(e =>
+    `<tr><td>${esc(e.num)}</td><td>${esc(e.batch)}</td><td>${esc(e.box)}</td><td><span class="badge badge-ng">${esc(e.type)}</span></td><td>${esc(e.detail)}</td></tr>`
+  ).join('');
+  const excRows = exceptions.map(e =>
+    `<tr><td>${esc(e.num)}</td><td>${esc(e.batch)}</td><td>${esc(e.box)}</td><td><span class="badge badge-wait">${esc(e.type)}</span></td><td>${esc(e.detail)}</td></tr>`
+  ).join('');
 
   document.getElementById('qtab-0').innerHTML = `
+    <div class="metrics-grid" style="grid-template-columns:repeat(5,1fr);margin-bottom:16px">
+      <div class="metric-card"><div class="metric-label">면수 검증 대상</div><div class="metric-value">${checkedMyun}건</div></div>
+      <div class="metric-card"><div class="metric-label">건수 검증 대상</div><div class="metric-value">${checkedGun}건</div></div>
+      <div class="metric-card"><div class="metric-label">오류 발견</div><div class="metric-value" style="color:#e53e3e">${errors.length}건</div></div>
+      <div class="metric-card"><div class="metric-label">예외 (도면 미완)</div><div class="metric-value" style="color:#c77600">${exceptions.length}건</div></div>
+      <div class="metric-card"><div class="metric-label">오류율</div><div class="metric-value">${errRate}%</div></div>
+    </div>
+    ${errors.length ? `
     <div class="card">
-      <div class="card-title">레이블 단위 품질검사</div>
-      <div class="form-row" style="grid-template-columns:repeat(4,1fr)">
-        <div class="form-group"><label>검사일자</label><input type="date" id="qi-date" value="${todayStr()}"></div>
-        <div class="form-group"><label>검사자</label><select id="qi-inspector">${wOpts||'<option>-</option>'}</select></div>
-        <div class="form-group"><label>검사유형</label><select id="qi-type"><option>전수검사</option><option>샘플링검사</option></select></div>
-        <div class="form-group"><label>검사공정</label><select id="qi-proc">${pOpts}</select></div>
+      <div class="card-title" style="color:#e53e3e">오류 목록 (${errors.length}건)</div>
+      <div class="filter-row mb-8">
+        <div class="filter-item"><label>검색</label><input type="text" placeholder="레이블/유형" oninput="filterQTable(this,'q0-err-tbl')"></div>
       </div>
-      <hr class="divider">
-      <div class="caption-top">검사한 레이블을 입력하고, 오류가 있는 레이블은 오류유형을 선택하세요.</div>
-      <div class="table-wrap" style="margin-bottom:8px">
-        <table class="input-tbl">
-          <thead><tr><th>레이블</th><th>결과</th><th>오류유형</th><th>오류내용</th><th></th></tr></thead>
-          <tbody id="qi-tbody"></tbody>
-        </table>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-secondary btn-sm" onclick="addQiRow()">+ 행 추가</button>
-      </div>
-      <div id="qi-summary"></div>
-      <div class="btn-row">
-        <button class="btn btn-primary" onclick="calcQiResult()">결과 확인</button>
-        <button class="btn btn-success hidden" id="qi-save-btn" onclick="saveQiResult()">💾 검사결과 저장</button>
+      <div class="scroll-table-wrap" style="max-height:300px"><table id="q0-err-tbl">
+        <thead><tr><th>레이블</th><th>반입회차</th><th>상자번호</th><th>오류유형</th><th>상세</th></tr></thead>
+        <tbody>${errRows}</tbody>
+      </table></div>
+    </div>` : '<div class="alert alert-success">오류가 발견되지 않았습니다.</div>'}
+    ${exceptions.length ? `
+    <div class="card">
+      <div class="card-title" style="color:#c77600">예외 항목 — 도면 미완료 (${exceptions.length}건)</div>
+      <div class="caption-top mb-8">도면포함/전체도면 레이블 중 도면스캔이 아직 완료되지 않아 면수가 일시적으로 불일치합니다.</div>
+      <div class="scroll-table-wrap" style="max-height:200px"><table id="q0-exc-tbl">
+        <thead><tr><th>레이블</th><th>반입회차</th><th>상자번호</th><th>구분</th><th>상세</th></tr></thead>
+        <tbody>${excRows}</tbody>
+      </table></div>
+    </div>` : ''}
+    <div class="card">
+      <div class="card-title">검증 규칙</div>
+      <div class="caption-top">
+        <strong>1. 면수 일치 검사</strong> — 면표시·문서스캔·보정의 면수가 모두 동일해야 합니다.<br>
+        &nbsp;&nbsp;&nbsp;예외: 도면포함/전체도면 레이블은 도면스캔 완료 전까지 면수 불일치가 허용됩니다.<br>
+        <strong>2. 건수 일치 검사</strong> — 분류의 건수와 색인의 건수가 일치해야 합니다.
       </div>
     </div>
   `;
-  addQiRow();
 }
 
 function addQiRow() {
