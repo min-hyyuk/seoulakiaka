@@ -2647,16 +2647,19 @@ function renderSettings(data, c) {
       <button class="tab-btn" onclick="switchStTab(1)">작업자 관리</button>
       <button class="tab-btn" onclick="switchStTab(2)">레이블 등록</button>
       <button class="tab-btn" onclick="switchStTab(3)">데이터 관리</button>
+      <button class="tab-btn" onclick="switchStTab(4)">통합진행표 업로드</button>
     </div>
     <div id="stab-0" class="tab-panel active"></div>
     <div id="stab-1" class="tab-panel"></div>
     <div id="stab-2" class="tab-panel"></div>
     <div id="stab-3" class="tab-panel"></div>
+    <div id="stab-4" class="tab-panel"></div>
   `;
   renderStTab0(data);
   renderStTab1(data);
   renderStTab2(data);
   renderStTab3(data);
+  renderStTab4();
 }
 
 function switchStTab(idx) {
@@ -2954,6 +2957,351 @@ function filterQTable(input, tableId) {
   }
 }
 
+// ============================================================
+// 통합공정진행표 업로드
+// ============================================================
+function renderStTab4() {
+  document.getElementById('stab-4').innerHTML = `
+    <div class="card">
+      <div class="card-title">📊 통합공정진행표 엑셀 업로드</div>
+      <div class="caption-top mb-8">통합공정진행표(.xlsx) 파일을 업로드하면 모든 공정 데이터가 자동으로 파싱되고 오류 검증 후 반영됩니다.</div>
+      <div class="form-group mb-12">
+        <input type="file" id="bulk-file" accept=".xlsx" onchange="parseBulkExcel(this)">
+      </div>
+      <div id="bulk-preview"></div>
+    </div>
+  `;
+}
+
+function parseBulkExcel(input) {
+  const file = input.files[0]; if (!file) return;
+  const area = document.getElementById('bulk-preview');
+  area.innerHTML = '<div class="alert alert-info">⏳ 파일 분석 중...</div>';
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      const wb = XLSX.read(e.target.result, {type:'array', cellDates:true});
+      const sheets = wb.SheetNames;
+
+      // 시트 존재 확인
+      const requiredSheets = ['분류','면표시','문서스캔','도면스캔','보정','색인','공개구분','재편철'];
+      const missing = requiredSheets.filter(s => !sheets.includes(s));
+      const found = requiredSheets.filter(s => sheets.includes(s));
+
+      if (missing.length === requiredSheets.length) {
+        area.innerHTML = '<div class="alert alert-danger">필요한 시트를 찾을 수 없습니다. 통합공정진행표 파일인지 확인하세요.</div>';
+        return;
+      }
+
+      // 진행표 시트에서 레이블 등록정보 추출
+      const registryFromFile = {};
+      if (sheets.includes('진행표')) {
+        const ws = wb.Sheets['진행표'];
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, defval:'', raw:false});
+        for (let i = 3; i < rows.length; i++) { // 4행부터 데이터
+          const r = rows[i];
+          const label = String(r[5]||'').trim(); // F열=레이블번호
+          if (!label || !/^\d+$/.test(label)) continue;
+          const box = String(r[4]||'').trim(); // E열=상자
+          registryFromFile[label] = { box, batch:'' };
+        }
+      }
+
+      // 각 공정 시트 파싱
+      const parsed = {};
+      const errors = [];
+      const stats = {};
+
+      function parseDate(v) {
+        if (!v) return '';
+        if (v instanceof Date) return v.toISOString().slice(0,10);
+        const s = String(v).trim();
+        const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return m[0];
+        return s.slice(0,10);
+      }
+
+      // 분류: A=레이블, B=건수, C=이름, D=날짜, F=분권(kwon)
+      if (sheets.includes('분류')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['분류'], {header:1, defval:'', raw:false});
+        parsed['분류'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['분류'].push({ label, gun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]), kwon:parseInt(r[5])||0 });
+        }
+        stats['분류'] = parsed['분류'].length;
+      }
+
+      // 면표시: A=레이블, B=면수, C=이름, D=날짜
+      if (sheets.includes('면표시')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['면표시'], {header:1, defval:'', raw:false});
+        parsed['면표시'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['면표시'].push({ label, myun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]) });
+        }
+        stats['면표시'] = parsed['면표시'].length;
+      }
+
+      // 문서스캔: A=레이블, B=면수, C=이름, D=날짜, E=유형
+      if (sheets.includes('문서스캔')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['문서스캔'], {header:1, defval:'', raw:false});
+        parsed['문서스캔'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          const domType = String(r[4]||'').trim();
+          const entry = { label, myun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]) };
+          if (domType && domType !== '-' && domType !== '0' && domType !== '00:00:00') entry.domyun_type = '도면포함';
+          parsed['문서스캔'].push(entry);
+        }
+        stats['문서스캔'] = parsed['문서스캔'].length;
+      }
+
+      // 도면스캔: A=레이블, B=면수, C=이름, D=날짜, E=도면종류
+      if (sheets.includes('도면스캔')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['도면스캔'], {header:1, defval:'', raw:false});
+        parsed['도면스캔'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['도면스캔'].push({ label, myun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]), domyun_type:'전체도면' });
+        }
+        stats['도면스캔'] = parsed['도면스캔'].length;
+      }
+
+      // 보정: A=레이블, B=면수, C=이름, D=날짜
+      if (sheets.includes('보정')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['보정'], {header:1, defval:'', raw:false});
+        parsed['보정'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['보정'].push({ label, myun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]) });
+        }
+        stats['보정'] = parsed['보정'].length;
+      }
+
+      // 색인: A=레이블, B=건수, C=이름, D=날짜
+      if (sheets.includes('색인')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['색인'], {header:1, defval:'', raw:false});
+        parsed['색인'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['색인'].push({ label, gun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]) });
+        }
+        stats['색인'] = parsed['색인'].length;
+      }
+
+      // 공개구분: A=레이블, B=건수, C=이름, D=날짜
+      if (sheets.includes('공개구분')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['공개구분'], {header:1, defval:'', raw:false});
+        parsed['공개구분'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['공개구분'].push({ label, gun:parseInt(r[1])||0, worker:String(r[2]||'').trim(), date:parseDate(r[3]) });
+        }
+        stats['공개구분'] = parsed['공개구분'].length;
+      }
+
+      // 재편철: A=레이블, B=이름, C=날짜, D=분권(kwon), F=건(gun)
+      if (sheets.includes('재편철')) {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets['재편철'], {header:1, defval:'', raw:false});
+        parsed['재편철'] = [];
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i];
+          const label = String(r[0]||'').trim(); if (!label) continue;
+          parsed['재편철'].push({ label, worker:String(r[1]||'').trim(), date:parseDate(r[2]), kwon:parseInt(r[3])||0, gun:parseInt(r[5])||0 });
+        }
+        stats['재편철'] = parsed['재편철'].length;
+      }
+
+      // ── 오류 검증 ──────────────────────────────────────────
+      // 임시 labels 구조 빌드
+      const tempLabels = {};
+      for (const proc of Object.keys(parsed)) {
+        for (const entry of parsed[proc]) {
+          if (!tempLabels[entry.label]) tempLabels[entry.label] = {};
+          const rec = { date:entry.date, worker:entry.worker };
+          if ('kwon' in entry) rec.kwon = entry.kwon;
+          if ('gun' in entry) rec.gun = entry.gun;
+          if ('myun' in entry) rec.myun = entry.myun;
+          if ('domyun_type' in entry) rec.domyun_type = entry.domyun_type;
+          tempLabels[entry.label][proc] = rec;
+        }
+      }
+
+      // 면수 일치 검사
+      let myunChecked = 0, myunErrors = 0;
+      const errList = [];
+      for (const [num, ld] of Object.entries(tempLabels)) {
+        const myunProcs = ['면표시','문서스캔','보정'].filter(p => p in ld);
+        if (myunProcs.length >= 2) {
+          myunChecked++;
+          const vals = myunProcs.map(p => ld[p].myun||0);
+          if (!vals.every(v => v === vals[0])) {
+            const isDom = ld['문서스캔']?.domyun_type === '도면포함' || ld['도면스캔']?.domyun_type === '전체도면';
+            const hasDomScan = '도면스캔' in ld;
+            if (isDom && !hasDomScan) {
+              // 예외: 도면 미완료
+            } else {
+              myunErrors++;
+              errList.push({ label:num, type:'면수 불일치', detail:myunProcs.map(p=>`${p}:${ld[p].myun||0}면`).join(', ') });
+            }
+          }
+        }
+      }
+
+      // 건수 일치 검사
+      let gunChecked = 0, gunErrors = 0;
+      for (const [num, ld] of Object.entries(tempLabels)) {
+        if ('분류' in ld && '색인' in ld) {
+          gunChecked++;
+          if ((ld['분류'].gun||0) !== (ld['색인'].gun||0)) {
+            gunErrors++;
+            errList.push({ label:num, type:'건수 불일치', detail:`분류:${ld['분류'].gun||0}건, 색인:${ld['색인'].gun||0}건` });
+          }
+        }
+      }
+
+      // 작업자 목록 추출
+      const allWorkers = new Set();
+      for (const proc of Object.keys(parsed)) {
+        for (const e of parsed[proc]) if (e.worker) allWorkers.add(e.worker);
+      }
+
+      // 결과 렌더링
+      const totalLabels = Object.keys(tempLabels).length;
+      const regCount = Object.keys(registryFromFile).length;
+      const statsRows = Object.entries(stats).map(([p,n]) =>
+        `<tr><td style="color:${PROCESS_COLORS[p]||'#333'};font-weight:600">${p}</td><td>${fmt(n)}건</td></tr>`
+      ).join('');
+
+      const errRows = errList.slice(0,50).map(e =>
+        `<tr><td>${esc(e.label)}</td><td><span class="badge badge-ng">${esc(e.type)}</span></td><td>${esc(e.detail)}</td></tr>`
+      ).join('');
+
+      area.innerHTML = `
+        <div class="alert alert-success mb-12">✅ 파일 분석 완료: <strong>${esc(file.name)}</strong></div>
+        <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:16px">
+          <div class="metric-card"><div class="metric-label">총 레이블</div><div class="metric-value">${fmt(totalLabels)}건</div></div>
+          <div class="metric-card"><div class="metric-label">진행표 레이블</div><div class="metric-value">${fmt(regCount)}건</div></div>
+          <div class="metric-card"><div class="metric-label">작업자</div><div class="metric-value">${allWorkers.size}명</div></div>
+          <div class="metric-card"><div class="metric-label">오류 발견</div><div class="metric-value" style="color:${errList.length?'#e53e3e':'#38a169'}">${errList.length}건</div></div>
+        </div>
+        ${missing.length ? `<div class="alert alert-warning mb-8">⚠️ 누락된 시트: ${missing.join(', ')}</div>` : ''}
+        <div class="card">
+          <div class="card-title">공정별 파싱 결과</div>
+          <div class="table-wrap"><table><thead><tr><th>공정</th><th>데이터 수</th></tr></thead><tbody>${statsRows}</tbody></table></div>
+        </div>
+        ${errList.length ? `
+        <div class="card">
+          <div class="card-title" style="color:#e53e3e">오류 검증 결과 (${errList.length}건${errList.length>50?' — 상위 50건 표시':''})</div>
+          <div class="filter-row mb-8">
+            <div class="filter-item"><label>검색</label><input type="text" placeholder="레이블/유형" oninput="filterQTable(this,'bulk-err-tbl')"></div>
+          </div>
+          <div class="scroll-table-wrap" style="max-height:250px"><table id="bulk-err-tbl">
+            <thead><tr><th>레이블</th><th>오류유형</th><th>상세</th></tr></thead>
+            <tbody>${errRows}</tbody>
+          </table></div>
+        </div>` : ''}
+        <div class="card">
+          <div class="card-title">작업자 목록 (${allWorkers.size}명)</div>
+          <div class="caption-top">${[...allWorkers].sort().join(', ')}</div>
+        </div>
+        <hr class="divider">
+        <div class="btn-row">
+          <button class="btn btn-primary" onclick="applyBulkImport(false)">📥 기존 데이터에 병합</button>
+          <button class="btn btn-danger" onclick="applyBulkImport(true)">🔄 기존 데이터 교체 (전체 초기화 후 반영)</button>
+        </div>
+        <div class="caption mt-8">병합: 기존 데이터를 유지하고 새 데이터를 추가/덮어씁니다. 교체: 기존 실적·레이블 데이터를 삭제하고 엑셀 데이터로 대체합니다.</div>
+        <div id="bulk-result"></div>
+      `;
+
+      // 파싱 데이터 임시 저장
+      window._bulkParsed = parsed;
+      window._bulkRegistry = registryFromFile;
+      window._bulkWorkers = [...allWorkers];
+
+    } catch(err) {
+      area.innerHTML = `<div class="alert alert-danger">파일 파싱 오류: ${esc(err.message)}</div>`;
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function applyBulkImport(replace) {
+  const parsed = window._bulkParsed;
+  const regFile = window._bulkRegistry;
+  const bulkWorkers = window._bulkWorkers;
+  if (!parsed) { showToast('파싱된 데이터가 없습니다.','warning'); return; }
+
+  const msg = replace
+    ? '⚠️ 기존 실적·레이블 데이터를 모두 삭제하고 엑셀 데이터로 교체합니다. 계속하시겠습니까?'
+    : '엑셀 데이터를 기존 데이터에 병합합니다. 동일 레이블·공정은 덮어씁니다. 계속하시겠습니까?';
+
+  showConfirm(msg, () => {
+    const data = loadData();
+
+    if (replace) {
+      data.labels = {};
+      data.label_registry = {};
+    }
+
+    // 레이블 등록정보 반영
+    for (const [lbl, info] of Object.entries(regFile)) {
+      if (!data.label_registry[lbl]) data.label_registry[lbl] = { box:'', batch:'' };
+      if (info.box) data.label_registry[lbl].box = info.box;
+    }
+
+    // 공정 데이터 반영
+    for (const proc of Object.keys(parsed)) {
+      for (const entry of parsed[proc]) {
+        const lbl = entry.label;
+        if (!data.labels[lbl]) data.labels[lbl] = {};
+        // 레이블 등록정보도 자동 추가
+        if (!data.label_registry[lbl]) data.label_registry[lbl] = { box:'', batch:'' };
+
+        const rec = { date:entry.date, worker:entry.worker };
+        if ('kwon' in entry) rec.kwon = entry.kwon;
+        if ('gun' in entry) rec.gun = entry.gun;
+        if ('myun' in entry) rec.myun = entry.myun;
+        if ('domyun_type' in entry) rec.domyun_type = entry.domyun_type;
+        if (entry.note) rec.note = entry.note;
+
+        data.labels[lbl][proc] = rec;
+      }
+    }
+
+    // 작업자 자동 등록
+    const existingWorkers = new Set(data.workers || []);
+    for (const w of bulkWorkers) {
+      if (w && !existingWorkers.has(w)) {
+        data.workers.push(w);
+        existingWorkers.add(w);
+      }
+    }
+
+    saveData(data);
+
+    const totalLabels = Object.keys(data.labels).length;
+    const totalReg = Object.keys(data.label_registry).length;
+
+    document.getElementById('bulk-result').innerHTML = `
+      <div class="alert alert-success mt-12">
+        ✅ ${replace ? '교체' : '병합'} 완료!<br>
+        레이블: ${fmt(totalReg)}건 등록 / 실적: ${fmt(totalLabels)}건 반영 / 작업자: ${data.workers.length}명
+      </div>
+    `;
+    showToast(`통합진행표 ${replace ? '교체' : '병합'} 완료!`);
+  });
+}
+
 // ── 글로벌 단축키 ──────────────────────────────────────────
 document.addEventListener('keydown', e => {
   // Ctrl+S → 현재 공정 시트 저장
@@ -3225,6 +3573,8 @@ window.clearAllFilters = clearAllFilters;
 window.resetHistFilters = resetHistFilters;
 window.filterQTable = filterQTable;
 window.resetProgressFilters = resetProgressFilters;
+window.parseBulkExcel = parseBulkExcel;
+window.applyBulkImport = applyBulkImport;
 window.applyCFSort = applyCFSort;
 window.cfdSearch = cfdSearch;
 window.cfdToggleAll = cfdToggleAll;
