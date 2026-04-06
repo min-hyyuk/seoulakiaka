@@ -940,7 +940,10 @@ function renderWeeklySummary(data, c) {
     return;
   }
 
-  // 일별 집계 (renderDailySummary와 동일)
+  // 사업 시작일 기준
+  const startDate = data.project?.start_date || '2026-03-16';
+
+  // 일별 집계
   const daily = {};
   for (const [, ld] of Object.entries(labels)) {
     const b = ld['분류'] || {};
@@ -958,57 +961,63 @@ function renderWeeklySummary(data, c) {
     }
   }
 
-  // 날짜 → 해당 주 월요일 키 구하기 (순수 숫자 연산)
-  function toMonday(dateStr) {
-    const parts = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (!parts) return null;
-    const dt = new Date(+parts[1], +parts[2] - 1, +parts[3], 12, 0, 0); // 정오로 설정해 시간대 이슈 방지
-    const dow = dt.getDay(); // 0=일 ~ 6=토
-    if (dow === 0 || dow === 6) return null; // 주말 스킵
-    const monOffset = 1 - dow; // 월요일까지 offset
-    const mon = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + monOffset, 12, 0, 0);
-    const fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 4, 12, 0, 0);
-    const pad = n => String(n).padStart(2, '0');
-    const monStr = `${mon.getFullYear()}-${pad(mon.getMonth()+1)}-${pad(mon.getDate())}`;
-    const friStr = `${fri.getFullYear()}-${pad(fri.getMonth()+1)}-${pad(fri.getDate())}`;
-    return { key: monStr, mon: monStr, fri: friStr };
+  const allDates = Object.keys(daily).sort();
+  if (!allDates.length) {
+    c.innerHTML = `<div class="page-title">📆 주별 총괄표</div><div class="alert alert-info">실적이 없습니다.</div>`;
+    return;
   }
 
-  // 주차별 그룹핑
-  const weekly = {};
-  const weekMeta = {};
-  for (const d of Object.keys(daily).sort()) {
-    const wk = toMonday(d);
-    if (!wk) continue;
-    if (!weekly[wk.key]) weekly[wk.key] = {};
-    if (!weekMeta[wk.key]) weekMeta[wk.key] = { mon: wk.mon, fri: wk.fri, dates: [] };
-    weekMeta[wk.key].dates.push(d);
+  // 날짜 → 시작일 기준 몇 번째 주인지 계산 (단순 7일 단위)
+  function daysBetween(a, b) {
+    // 'YYYY-MM-DD' 문자열 두 개의 일수 차이
+    const da = a.split('-'), db = b.split('-');
+    const msA = Date.UTC(+da[0], +da[1]-1, +da[2]);
+    const msB = Date.UTC(+db[0], +db[1]-1, +db[2]);
+    return Math.floor((msB - msA) / 86400000);
+  }
+  function addDaysStr(base, n) {
+    const p = base.split('-');
+    const ms = Date.UTC(+p[0], +p[1]-1, +p[2]) + n * 86400000;
+    const d = new Date(ms);
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+  }
+
+  // 주차별 그룹핑: 시작일부터 7일씩
+  const weekly = {};   // { weekIdx: { proc: {...} } }
+  const weekMeta = {}; // { weekIdx: { start, end, dates:[] } }
+
+  for (const d of allDates) {
+    const diff = daysBetween(startDate, d);
+    if (diff < 0) continue; // 시작일 이전 데이터 스킵
+    const weekIdx = Math.floor(diff / 7);
+    const weekStart = addDaysStr(startDate, weekIdx * 7);
+    const weekEnd   = addDaysStr(startDate, weekIdx * 7 + 6);
+
+    if (!weekly[weekIdx]) weekly[weekIdx] = {};
+    if (!weekMeta[weekIdx]) weekMeta[weekIdx] = { start: weekStart, end: weekEnd, dates: [] };
+    weekMeta[weekIdx].dates.push(d);
+
     for (const proc of PROCESSES) {
       if (!daily[d][proc]) continue;
-      if (!weekly[wk.key][proc]) weekly[wk.key][proc] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set(), days:new Set() };
-      const wp = weekly[wk.key][proc];
+      if (!weekly[weekIdx][proc]) weekly[weekIdx][proc] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set() };
+      const wp = weekly[weekIdx][proc];
       const dp = daily[d][proc];
       wp.labels += dp.labels; wp.kwon += dp.kwon; wp.gun += dp.gun; wp.myun += dp.myun;
       dp.workers.forEach(w => wp.workers.add(w));
-      wp.days.add(d);
     }
   }
 
-  const weekKeys = Object.keys(weekly).sort();
-  if (!weekKeys.length) {
-    c.innerHTML = `<div class="page-title">📆 주별 총괄표</div><div class="alert alert-info">근무일(월~금) 실적이 없습니다.</div>`;
-    return;
-  }
+  const weekIdxs = Object.keys(weekly).map(Number).sort((a,b) => a-b);
 
   // 누적합계
   const cumTotals = {};
   for (const p of PROCESSES) cumTotals[p] = { labels:0, kwon:0, gun:0, myun:0 };
-  for (const wk of weekKeys)
-    for (const p of PROCESSES) if (weekly[wk][p]) {
-      cumTotals[p].labels += weekly[wk][p].labels;
-      cumTotals[p].kwon += weekly[wk][p].kwon;
-      cumTotals[p].gun += weekly[wk][p].gun;
-      cumTotals[p].myun += weekly[wk][p].myun;
+  for (const wi of weekIdxs)
+    for (const p of PROCESSES) if (weekly[wi][p]) {
+      cumTotals[p].labels += weekly[wi][p].labels;
+      cumTotals[p].kwon += weekly[wi][p].kwon;
+      cumTotals[p].gun += weekly[wi][p].gun;
+      cumTotals[p].myun += weekly[wi][p].myun;
     }
 
   const scanCumKwon = cumTotals['문서스캔'].kwon + cumTotals['도면스캔'].kwon;
@@ -1043,11 +1052,12 @@ function renderWeeklySummary(data, c) {
     return `<th class="ds-proc-head" style="--pc:${PROCESS_COLORS[p]}"><span class="ds-proc-name">${p}</span><span class="ds-proc-unit">${unitLabel}</span></th>`;
   }).join('');
 
-  const weekRows = weekKeys.map(wk => {
-    const meta = weekMeta[wk];
-    const weekLabel = `${meta.mon.slice(5)} ~ ${meta.fri.slice(5)}`;
-    const workDays = meta.dates.length;
-    const row = weekly[wk];
+  const weekRows = weekIdxs.map(wi => {
+    const meta = weekMeta[wi];
+    const weekLabel = `${meta.start.slice(5)} ~ ${meta.end.slice(5)}`;
+    const weekNum = wi + 1;
+    const dayCount = meta.dates.length;
+    const row = weekly[wi];
     const cells = PROCESSES.map(p => {
       const pd = row[p];
       if (!pd) return `<td class="ds-cell ds-empty"></td>`;
@@ -1058,7 +1068,7 @@ function renderWeeklySummary(data, c) {
       const colsHtml = cols.map(({val, label}) => `<div class="ds-hcol"><div class="ds-hval">${val}</div><div class="ds-hlabel">${label}</div></div>`).join('');
       return `<td class="ds-cell" style="--pc:${PROCESS_COLORS[p]}"><div class="ds-hrow">${colsHtml}</div></td>`;
     }).join('');
-    return `<tr><td class="ds-date"><strong>${weekLabel}</strong><br><span style="font-size:11px;color:var(--text-muted)">${workDays}일</span></td>${cells}</tr>`;
+    return `<tr><td class="ds-date"><strong>${weekNum}주차</strong><br><span style="font-size:11px;color:var(--text-muted)">${weekLabel}<br>${dayCount}일 실적</span></td>${cells}</tr>`;
   }).join('');
 
   c.innerHTML = `
@@ -1066,7 +1076,7 @@ function renderWeeklySummary(data, c) {
     <div class="section-header">누적 합계</div>
     <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);align-items:start">${cumMetrics}</div>
     <hr class="divider">
-    <div class="section-header">주별 실적 (월~금 근무일 기준)</div>
+    <div class="section-header">주별 실적 (${startDate} 기준 7일 단위)</div>
     <div class="card"><div class="scroll-x"><table class="ds-table">
       <thead><tr><th class="ds-date-head">주차</th>${theadCells}</tr></thead>
       <tbody>${weekRows}</tbody>
