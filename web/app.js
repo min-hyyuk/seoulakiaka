@@ -193,6 +193,7 @@ function renderSidebar() {
     { icon:'📈', name:'대시보드', sep:true },
     { icon:'📦', name:'반입반출 현황', sep:true },
     { icon:'📅', name:'일별 총괄표' },
+    { icon:'📆', name:'주별 총괄표' },
     { icon:'📋', name:'공정진행표' },
     { icon:'👥', name:'작업자별 현황', sep:true },
     { icon:'🔍', name:'품질검사', sep:true },
@@ -228,6 +229,7 @@ function renderContent() {
       else                           renderProcessSheet(data, c, state.sub);
       break;
     case '일별 총괄표': renderDailySummary(data, c); break;
+    case '주별 총괄표': renderWeeklySummary(data, c); break;
     case '작업자별 현황': renderWorkerStats(data, c); break;
     case '반입반출 현황': renderTransferPage(data, c); break;
     case '품질검사':      renderQuality(data, c); break;
@@ -924,6 +926,150 @@ function renderDailySummary(data, c) {
     <div class="card"><div class="scroll-x"><table class="ds-table">
       <thead><tr><th class="ds-date-head">날짜</th>${theadCells}</tr></thead>
       <tbody>${cleanRows}</tbody>
+    </table></div></div>
+  `;
+}
+
+// ============================================================
+// 📆 주별 총괄표
+// ============================================================
+function renderWeeklySummary(data, c) {
+  const labels = data.labels || {};
+  if (!Object.keys(labels).length) {
+    c.innerHTML = `<div class="page-title">📆 주별 총괄표</div><div class="alert alert-info">등록된 실적이 없습니다.</div>`;
+    return;
+  }
+
+  // 일별 집계 (renderDailySummary와 동일)
+  const daily = {};
+  for (const [, ld] of Object.entries(labels)) {
+    const b = ld['분류'] || {};
+    const bKwon = b.kwon || 1;
+    const bGun  = b.gun  || 0;
+    for (const proc of PROCESSES) {
+      if (!(proc in ld)) continue;
+      const e = ld[proc]; const d = e.date; if (!d) continue;
+      if (!daily[d]) daily[d] = {};
+      if (!daily[d][proc]) daily[d][proc] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set() };
+      const pd = daily[d][proc];
+      if (e.worker) pd.workers.add(e.worker);
+      if (proc === '분류') { pd.labels += 1; pd.kwon += e.kwon||0; pd.gun += e.gun||0; }
+      else { pd.kwon += bKwon; pd.gun += bGun; pd.myun += e.myun||0; }
+    }
+  }
+
+  // 날짜 → 해당 주 월요일 키 구하기 (순수 숫자 연산)
+  function toMonday(dateStr) {
+    const parts = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!parts) return null;
+    const dt = new Date(+parts[1], +parts[2] - 1, +parts[3], 12, 0, 0); // 정오로 설정해 시간대 이슈 방지
+    const dow = dt.getDay(); // 0=일 ~ 6=토
+    if (dow === 0 || dow === 6) return null; // 주말 스킵
+    const monOffset = 1 - dow; // 월요일까지 offset
+    const mon = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() + monOffset, 12, 0, 0);
+    const fri = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 4, 12, 0, 0);
+    const pad = n => String(n).padStart(2, '0');
+    const monStr = `${mon.getFullYear()}-${pad(mon.getMonth()+1)}-${pad(mon.getDate())}`;
+    const friStr = `${fri.getFullYear()}-${pad(fri.getMonth()+1)}-${pad(fri.getDate())}`;
+    return { key: monStr, mon: monStr, fri: friStr };
+  }
+
+  // 주차별 그룹핑
+  const weekly = {};
+  const weekMeta = {};
+  for (const d of Object.keys(daily).sort()) {
+    const wk = toMonday(d);
+    if (!wk) continue;
+    if (!weekly[wk.key]) weekly[wk.key] = {};
+    if (!weekMeta[wk.key]) weekMeta[wk.key] = { mon: wk.mon, fri: wk.fri, dates: [] };
+    weekMeta[wk.key].dates.push(d);
+    for (const proc of PROCESSES) {
+      if (!daily[d][proc]) continue;
+      if (!weekly[wk.key][proc]) weekly[wk.key][proc] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set(), days:new Set() };
+      const wp = weekly[wk.key][proc];
+      const dp = daily[d][proc];
+      wp.labels += dp.labels; wp.kwon += dp.kwon; wp.gun += dp.gun; wp.myun += dp.myun;
+      dp.workers.forEach(w => wp.workers.add(w));
+      wp.days.add(d);
+    }
+  }
+
+  const weekKeys = Object.keys(weekly).sort();
+  if (!weekKeys.length) {
+    c.innerHTML = `<div class="page-title">📆 주별 총괄표</div><div class="alert alert-info">근무일(월~금) 실적이 없습니다.</div>`;
+    return;
+  }
+
+  // 누적합계
+  const cumTotals = {};
+  for (const p of PROCESSES) cumTotals[p] = { labels:0, kwon:0, gun:0, myun:0 };
+  for (const wk of weekKeys)
+    for (const p of PROCESSES) if (weekly[wk][p]) {
+      cumTotals[p].labels += weekly[wk][p].labels;
+      cumTotals[p].kwon += weekly[wk][p].kwon;
+      cumTotals[p].gun += weekly[wk][p].gun;
+      cumTotals[p].myun += weekly[wk][p].myun;
+    }
+
+  const scanCumKwon = cumTotals['문서스캔'].kwon + cumTotals['도면스캔'].kwon;
+  const scanCumGun  = cumTotals['문서스캔'].gun  + cumTotals['도면스캔'].gun;
+  const scanCumMyun = cumTotals['문서스캔'].myun + cumTotals['도면스캔'].myun;
+  const SCAN_COLOR_CUM = '#805ad5';
+
+  function cmCols(cols) { return cols.map(({val, label}) => `<div class="cm-hcol"><div class="cm-hval">${val}</div><div class="cm-hlabel">${label}</div></div>`).join(''); }
+  function cmCard(color, title, cols) { return `<div class="metric-card" style="--pc:${color}"><div class="metric-label" style="color:${color}">${title}</div><div class="cm-hrow">${cmCols(cols)}</div></div>`; }
+  function cmInline(color, title, cols) { return `<div class="scan-inline-item" style="--pc:${color}"><div class="metric-label" style="color:${color};font-size:12px;margin-bottom:6px">${title}</div><div class="cm-hrow">${cmCols(cols)}</div></div>`; }
+
+  const scanBlock = `<div class="scan-cum-block">
+    ${cmInline(SCAN_COLOR_CUM, '스캔합계', [{val:fmt(scanCumKwon),label:'권호수'},{val:fmt(scanCumGun),label:'건'},{val:fmt(scanCumMyun),label:'면'}])}
+    <div class="scan-inline-divider"></div>
+    ${cmInline(PROCESS_COLORS['문서스캔'], '문서스캔', [{val:fmt(cumTotals['문서스캔'].kwon),label:'권호수'},{val:fmt(cumTotals['문서스캔'].gun),label:'건'},{val:fmt(cumTotals['문서스캔'].myun),label:'면'}])}
+    <div class="scan-inline-divider"></div>
+    ${cmInline(PROCESS_COLORS['도면스캔'], '도면스캔', [{val:fmt(cumTotals['도면스캔'].kwon),label:'권호수'},{val:fmt(cumTotals['도면스캔'].gun),label:'건'},{val:fmt(cumTotals['도면스캔'].myun),label:'면'}])}
+  </div>`;
+
+  const CM_ORDER = ['분류','면표시','__scan__','보정','색인','재편철','공개구분'];
+  const cumMetrics = CM_ORDER.map(p => {
+    if (p === '__scan__') return scanBlock;
+    const ct = cumTotals[p];
+    const cols = p === '분류'
+      ? [{val:fmt(ct.labels),label:'권'},{val:fmt(ct.kwon),label:'권호수'},{val:fmt(ct.gun),label:'건'}]
+      : [{val:fmt(ct.kwon),label:'권호수'},{val:fmt(ct.gun),label:'건'},{val:fmt(ct.myun),label:'면'}];
+    return cmCard(PROCESS_COLORS[p], p, cols);
+  }).join('');
+
+  const theadCells = PROCESSES.map(p => {
+    const unitLabel = p === '분류' ? '권 / 권호수 / 건 / 인원' : '권호수 / 건 / 면 / 인원';
+    return `<th class="ds-proc-head" style="--pc:${PROCESS_COLORS[p]}"><span class="ds-proc-name">${p}</span><span class="ds-proc-unit">${unitLabel}</span></th>`;
+  }).join('');
+
+  const weekRows = weekKeys.map(wk => {
+    const meta = weekMeta[wk];
+    const weekLabel = `${meta.mon.slice(5)} ~ ${meta.fri.slice(5)}`;
+    const workDays = meta.dates.length;
+    const row = weekly[wk];
+    const cells = PROCESSES.map(p => {
+      const pd = row[p];
+      if (!pd) return `<td class="ds-cell ds-empty"></td>`;
+      const wCnt = pd.workers.size;
+      const cols = p === '분류'
+        ? [{val:fmt(pd.labels),label:'권'},{val:fmt(pd.kwon),label:'권호수'},{val:fmt(pd.gun),label:'건'},{val:wCnt||'-',label:'명'}]
+        : [{val:fmt(pd.kwon),label:'권호수'},{val:fmt(pd.gun),label:'건'},{val:fmt(pd.myun),label:'면'},{val:wCnt||'-',label:'명'}];
+      const colsHtml = cols.map(({val, label}) => `<div class="ds-hcol"><div class="ds-hval">${val}</div><div class="ds-hlabel">${label}</div></div>`).join('');
+      return `<td class="ds-cell" style="--pc:${PROCESS_COLORS[p]}"><div class="ds-hrow">${colsHtml}</div></td>`;
+    }).join('');
+    return `<tr><td class="ds-date"><strong>${weekLabel}</strong><br><span style="font-size:11px;color:var(--text-muted)">${workDays}일</span></td>${cells}</tr>`;
+  }).join('');
+
+  c.innerHTML = `
+    <div class="page-title">📆 주별 총괄표</div>
+    <div class="section-header">누적 합계</div>
+    <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);align-items:start">${cumMetrics}</div>
+    <hr class="divider">
+    <div class="section-header">주별 실적 (월~금 근무일 기준)</div>
+    <div class="card"><div class="scroll-x"><table class="ds-table">
+      <thead><tr><th class="ds-date-head">주차</th>${theadCells}</tr></thead>
+      <tbody>${weekRows}</tbody>
     </table></div></div>
   `;
 }
