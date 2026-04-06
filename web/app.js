@@ -959,32 +959,24 @@ function renderWeeklySummary(data, c) {
   }
 
   // 주차별 그룹핑 (월~금 근무일 기준)
-  function dateParts(s) {
+  function parseLocalDate(s) {
     if (!s) return null;
-    const m = String(s).match(/(\d{4})-(\d{2})-(\d{2})/);
-    if (!m) return null;
-    return [+m[1], +m[2], +m[3]];
+    const parts = String(s).split('-').map(Number);
+    if (parts.length === 3) return new Date(parts[0], parts[1]-1, parts[2]);
+    if (parts.length === 2) return new Date(new Date().getFullYear(), parts[0]-1, parts[1]); // MM-DD → 올해로 간주
+    return null;
   }
-  function dayOfWeek(y, m, d) {
-    // Zeller-like: 0=Sun, 1=Mon, ..., 6=Sat
-    return new Date(y, m - 1, d).getDay();
-  }
-  function fmtD(y, m, d) {
-    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-  }
-  function addDays(y, m, d, n) {
-    const dt = new Date(y, m - 1, d + n);
-    return [dt.getFullYear(), dt.getMonth() + 1, dt.getDate()];
-  }
-  function getMondayFriday(dateStr) {
-    const p = dateParts(dateStr);
-    if (!p) return null;
-    const [y, m, d] = p;
-    const dow = dayOfWeek(y, m, d); // 0=Sun..6=Sat
-    const diffToMon = dow === 0 ? -6 : 1 - dow;
-    const mon = addDays(y, m, d, diffToMon);
-    const fri = addDays(mon[0], mon[1], mon[2], 4);
-    return { key: fmtD(...mon), mon: fmtD(...mon), fri: fmtD(...fri) };
+  function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+  function getWeekKey(dateStr) {
+    const d = parseLocalDate(dateStr);
+    if (!d || isNaN(d.getTime())) return null;
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const mon = new Date(d);
+    mon.setDate(d.getDate() + diff);
+    const fri = new Date(mon);
+    fri.setDate(mon.getDate() + 4);
+    return { key: toDateStr(mon), mon: toDateStr(mon), fri: toDateStr(fri) };
   }
 
   const weekly = {};
@@ -992,11 +984,11 @@ function renderWeeklySummary(data, c) {
   const dates = Object.keys(daily).sort();
 
   for (const d of dates) {
-    const p = dateParts(d);
-    if (!p) continue;
-    const dow = dayOfWeek(...p);
+    const ld = parseLocalDate(d);
+    if (!ld || isNaN(ld.getTime())) continue;
+    const dow = ld.getDay();
     if (dow === 0 || dow === 6) continue; // 주말 제외
-    const wk = getMondayFriday(d);
+    const wk = getWeekKey(d);
     if (!wk) continue;
     if (!weekly[wk.key]) weekly[wk.key] = {};
     if (!weekMeta[wk.key]) weekMeta[wk.key] = { mon: wk.mon, fri: wk.fri, dates: [] };
