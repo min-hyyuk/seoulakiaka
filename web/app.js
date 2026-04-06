@@ -959,11 +959,18 @@ function renderWeeklySummary(data, c) {
   }
 
   // 주차별 그룹핑 (월~금 근무일 기준)
-  function parseLocalDate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+  function parseLocalDate(s) {
+    if (!s) return null;
+    const parts = String(s).split('-').map(Number);
+    if (parts.length === 3) return new Date(parts[0], parts[1]-1, parts[2]);
+    if (parts.length === 2) return new Date(new Date().getFullYear(), parts[0]-1, parts[1]); // MM-DD → 올해로 간주
+    return null;
+  }
   function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
   function getWeekKey(dateStr) {
     const d = parseLocalDate(dateStr);
-    const day = d.getDay(); // 0=일, 1=월, ..., 6=토
+    if (!d || isNaN(d.getTime())) return null;
+    const day = d.getDay();
     const diff = day === 0 ? -6 : 1 - day;
     const mon = new Date(d);
     mon.setDate(d.getDate() + diff);
@@ -977,9 +984,12 @@ function renderWeeklySummary(data, c) {
   const dates = Object.keys(daily).sort();
 
   for (const d of dates) {
-    const dow = parseLocalDate(d).getDay();
+    const ld = parseLocalDate(d);
+    if (!ld || isNaN(ld.getTime())) continue;
+    const dow = ld.getDay();
     if (dow === 0 || dow === 6) continue; // 주말 제외
     const wk = getWeekKey(d);
+    if (!wk) continue;
     if (!weekly[wk.key]) weekly[wk.key] = {};
     if (!weekMeta[wk.key]) weekMeta[wk.key] = { mon: wk.mon, fri: wk.fri, dates: [] };
     weekMeta[wk.key].dates.push(d);
