@@ -915,77 +915,15 @@ function renderDailySummary(data, c) {
     return `<tr><td class="ds-date"><strong>${d}</strong></td>${cells}</tr>`;
   }).join('');
 
-  // ── 주별 집계 (daily 데이터 재활용, 시작일 기준 7일 단위) ──
-  const startDate = data.project?.start_date || '2026-03-16';
-  const sdParts = startDate.split('-');
-  const sdMs = Date.UTC(+sdParts[0], +sdParts[1]-1, +sdParts[2]);
-
-  const weeklyBuckets = {}; // { weekIdx: { proc: {labels,kwon,gun,myun,workers} } }
-  const weeklyMeta = {};    // { weekIdx: { dates:[] } }
-
-  for (const d of dates) {
-    const dp = d.split('-');
-    if (dp.length < 3) continue;
-    const dMs = Date.UTC(+dp[0], +dp[1]-1, +dp[2]);
-    const diff = Math.floor((dMs - sdMs) / 86400000);
-    if (diff < 0) continue;
-    const wi = Math.floor(diff / 7);
-
-    if (!weeklyBuckets[wi]) weeklyBuckets[wi] = {};
-    if (!weeklyMeta[wi]) weeklyMeta[wi] = { dates:[] };
-    weeklyMeta[wi].dates.push(d);
-
-    for (const p of PROCESSES) {
-      if (!daily[d]?.[p]) continue;
-      if (!weeklyBuckets[wi][p]) weeklyBuckets[wi][p] = { labels:0, kwon:0, gun:0, myun:0, workers:new Set() };
-      const wp = weeklyBuckets[wi][p], dp2 = daily[d][p];
-      wp.labels += dp2.labels; wp.kwon += dp2.kwon; wp.gun += dp2.gun; wp.myun += dp2.myun;
-      dp2.workers.forEach(w => wp.workers.add(w));
-    }
-  }
-
-  const weekIdxs = Object.keys(weeklyBuckets).map(Number).sort((a,b)=>a-b);
-
-  function weekRange(wi) {
-    const sMs = sdMs + wi * 7 * 86400000;
-    const eMs = sMs + 6 * 86400000;
-    const s = new Date(sMs), e = new Date(eMs);
-    const pad = n => String(n).padStart(2,'0');
-    return `${pad(s.getUTCMonth()+1)}-${pad(s.getUTCDate())} ~ ${pad(e.getUTCMonth()+1)}-${pad(e.getUTCDate())}`;
-  }
-
-  function weekCell(pd, p) {
-    if (!pd) return `<td class="ds-cell ds-empty"></td>`;
-    const wCnt = pd.workers.size;
-    const cols = p === '분류'
-      ? [{val:fmt(pd.labels),label:'권'},{val:fmt(pd.kwon),label:'권호수'},{val:fmt(pd.gun),label:'건'},{val:wCnt||'-',label:'명'}]
-      : [{val:fmt(pd.kwon),label:'권호수'},{val:fmt(pd.gun),label:'건'},{val:fmt(pd.myun),label:'면'},{val:wCnt||'-',label:'명'}];
-    const h = cols.map(({val,label})=>`<div class="ds-hcol"><div class="ds-hval">${val}</div><div class="ds-hlabel">${label}</div></div>`).join('');
-    return `<td class="ds-cell" style="--pc:${PROCESS_COLORS[p]}"><div class="ds-hrow">${h}</div></td>`;
-  }
-
-  const weekRows = weekIdxs.map(wi => {
-    const dayCount = weeklyMeta[wi].dates.length;
-    const cells = PROCESSES.map(p => weekCell(weeklyBuckets[wi][p], p)).join('');
-    return `<tr><td class="ds-date"><strong>${wi+1}주차</strong><br><span style="font-size:11px;color:var(--text-muted)">${weekRange(wi)}<br>${dayCount}일</span></td>${cells}</tr>`;
-  }).join('');
-
   c.innerHTML = `
-    <div class="page-title">📋 일별/주별 총괄표</div>
+    <div class="page-title">📋 일별 총괄표</div>
     <div class="section-header">누적 합계</div>
     <div class="metrics-grid" style="grid-template-columns:repeat(4,1fr);align-items:start">${cumMetrics}</div>
     <hr class="divider">
-    <div class="tabs" style="margin-bottom:0">
-      <button class="tab-btn active" onclick="document.getElementById('ds-daily').style.display='';document.getElementById('ds-weekly').style.display='none';this.classList.add('active');this.nextElementSibling.classList.remove('active')">일별 실적</button>
-      <button class="tab-btn" onclick="document.getElementById('ds-weekly').style.display='';document.getElementById('ds-daily').style.display='none';this.classList.add('active');this.previousElementSibling.classList.remove('active')">주별 실적</button>
-    </div>
-    <div id="ds-daily" class="card" style="margin-top:0;border-radius:0 0 8px 8px"><div class="scroll-x"><table class="ds-table">
+    <div class="section-header">일별 실적</div>
+    <div class="card"><div class="scroll-x"><table class="ds-table">
       <thead><tr><th class="ds-date-head">날짜</th>${theadCells}</tr></thead>
       <tbody>${cleanRows}</tbody>
-    </table></div></div>
-    <div id="ds-weekly" class="card" style="display:none;margin-top:0;border-radius:0 0 8px 8px"><div class="scroll-x"><table class="ds-table">
-      <thead><tr><th class="ds-date-head">주차</th>${theadCells}</tr></thead>
-      <tbody>${weekRows}</tbody>
     </table></div></div>
   `;
 }
