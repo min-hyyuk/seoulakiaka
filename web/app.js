@@ -959,24 +959,25 @@ function renderWeeklySummary(data, c) {
   }
 
   // 주차별 그룹핑 (월~금 근무일 기준)
+  function parseLocalDate(s) { const [y,m,d] = s.split('-').map(Number); return new Date(y, m-1, d); }
+  function toDateStr(d) { return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
   function getWeekKey(dateStr) {
-    const d = new Date(dateStr);
+    const d = parseLocalDate(dateStr);
     const day = d.getDay(); // 0=일, 1=월, ..., 6=토
-    // 해당 주의 월요일 구하기
     const diff = day === 0 ? -6 : 1 - day;
     const mon = new Date(d);
     mon.setDate(d.getDate() + diff);
     const fri = new Date(mon);
     fri.setDate(mon.getDate() + 4);
-    return { key: mon.toISOString().slice(0,10), mon: mon.toISOString().slice(0,10), fri: fri.toISOString().slice(0,10) };
+    return { key: toDateStr(mon), mon: toDateStr(mon), fri: toDateStr(fri) };
   }
 
-  const weekly = {}; // { weekKey: { proc: { labels, kwon, gun, myun, workers, days } } }
-  const weekMeta = {}; // { weekKey: { mon, fri, dates:[] } }
+  const weekly = {};
+  const weekMeta = {};
   const dates = Object.keys(daily).sort();
 
   for (const d of dates) {
-    const dow = new Date(d).getDay();
+    const dow = parseLocalDate(d).getDay();
     if (dow === 0 || dow === 6) continue; // 주말 제외
     const wk = getWeekKey(d);
     if (!weekly[wk.key]) weekly[wk.key] = {};
