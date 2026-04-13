@@ -1919,27 +1919,38 @@ function renderQTab0(data) {
     const box = registry[num]?.box || '';
     const batch = registry[num]?.batch || '';
 
-    // 1. 면수 일치 검사 (면표시 / 문서스캔 / 보정)
-    const hasMyunProcs = ['면표시','문서스캔','보정'].filter(p => p in ld);
-    if (hasMyunProcs.length >= 2) {
+    // 1. 면수 일치 검사: 면표시 = 문서스캔 + 도면스캔, 보정도 동일
+    const hasMT = '면표시' in ld, hasMS = '문서스캔' in ld, hasBO = '보정' in ld;
+    const hasDomScan = '도면스캔' in ld;
+    const mtMyun = hasMT ? (ld['면표시'].myun||0) : null;
+    const msMyun = hasMS ? (ld['문서스캔'].myun||0) : null;
+    const dsMyun = hasDomScan ? (ld['도면스캔'].myun||0) : 0;
+    const boMyun = hasBO ? (ld['보정'].myun||0) : null;
+    const scanTotal = msMyun !== null ? msMyun + dsMyun : null; // 문서스캔 + 도면스캔
+
+    if ([mtMyun, scanTotal, boMyun].filter(v => v !== null).length >= 2) {
       checkedMyun++;
-      const myunVals = {};
-      for (const p of hasMyunProcs) myunVals[p] = ld[p].myun || 0;
+      let hasError = false;
+      const parts = [];
+      if (mtMyun !== null) parts.push(`면표시:${mtMyun}면`);
+      if (msMyun !== null) parts.push(`문서스캔:${msMyun}면`);
+      if (hasDomScan) parts.push(`도면스캔:${dsMyun}면`);
+      if (scanTotal !== null) parts.push(`스캔합계:${scanTotal}면`);
+      if (boMyun !== null) parts.push(`보정:${boMyun}면`);
 
-      // 도면스캔 면수도 참고
-      const hasDomScan = '도면스캔' in ld;
-      const domMyun = hasDomScan ? (ld['도면스캔'].myun||0) : 0;
-      const isDomType = ld['문서스캔']?.domyun_type === '도면포함' || ld['도면스캔']?.domyun_type === '전체도면';
+      // 면표시 vs 스캔합계(문서+도면) 비교
+      if (mtMyun !== null && scanTotal !== null && mtMyun !== scanTotal) hasError = true;
+      // 면표시 vs 보정 비교
+      if (mtMyun !== null && boMyun !== null && mtMyun !== boMyun) hasError = true;
+      // 스캔합계 vs 보정 비교
+      if (scanTotal !== null && boMyun !== null && scanTotal !== boMyun) hasError = true;
 
-      const vals = Object.values(myunVals);
-      const allEqual = vals.every(v => v === vals[0]);
-
-      if (!allEqual) {
-        // 도면포함/전체도면이면서 도면스캔 미완료 → 예외
+      if (hasError) {
+        const isDomType = ld['문서스캔']?.domyun_type === '도면포함' || ld['도면스캔']?.domyun_type === '전체도면';
         if (isDomType && !hasDomScan) {
-          exceptions.push({ num, box, batch, type:'면수 불일치 (도면 미완료)', detail: hasMyunProcs.map(p=>`${p}:${myunVals[p]}면`).join(', ') });
+          exceptions.push({ num, box, batch, type:'면수 불일치 (도면 미완료)', detail: parts.join(', ') });
         } else {
-          errors.push({ num, box, batch, type:'면수 불일치', detail: hasMyunProcs.map(p=>`${p}:${myunVals[p]}면`).join(', ') + (hasDomScan ? `, 도면스캔:${domMyun}면` : '') });
+          errors.push({ num, box, batch, type:'면수 불일치', detail: parts.join(', ') });
         }
       }
     }
@@ -2034,7 +2045,7 @@ function renderQTab0(data) {
     <div class="card">
       <div class="card-title">검증 규칙</div>
       <div class="caption-top">
-        <strong>1. 면수 일치 검사</strong> — 면표시·문서스캔·보정의 면수가 모두 동일해야 합니다.<br>
+        <strong>1. 면수 일치 검사</strong> — 면표시 = 문서스캔 + 도면스캔 = 보정 이어야 합니다.<br>
         &nbsp;&nbsp;&nbsp;예외: 도면포함/전체도면 레이블은 도면스캔 완료 전까지 면수 불일치가 허용됩니다.<br>
         <strong>2. 건수 일치 검사</strong> — 분류의 건수와 색인의 건수가 일치해야 합니다.
       </div>
@@ -3137,22 +3148,35 @@ function parseBulkExcel(input) {
         }
       }
 
-      // 면수 일치 검사
+      // 면수 일치 검사: 면표시 = 문서스캔 + 도면스캔, 보정도 동일
       let myunChecked = 0, myunErrors = 0;
       const errList = [];
       for (const [num, ld] of Object.entries(tempLabels)) {
-        const myunProcs = ['면표시','문서스캔','보정'].filter(p => p in ld);
-        if (myunProcs.length >= 2) {
+        const hasMT2 = '면표시' in ld, hasMS2 = '문서스캔' in ld, hasBO2 = '보정' in ld, hasDS2 = '도면스캔' in ld;
+        const mt2 = hasMT2 ? (ld['면표시'].myun||0) : null;
+        const ms2 = hasMS2 ? (ld['문서스캔'].myun||0) : null;
+        const ds2 = hasDS2 ? (ld['도면스캔'].myun||0) : 0;
+        const bo2 = hasBO2 ? (ld['보정'].myun||0) : null;
+        const st2 = ms2 !== null ? ms2 + ds2 : null;
+        if ([mt2, st2, bo2].filter(v => v !== null).length >= 2) {
           myunChecked++;
-          const vals = myunProcs.map(p => ld[p].myun||0);
-          if (!vals.every(v => v === vals[0])) {
+          let hasErr2 = false;
+          if (mt2 !== null && st2 !== null && mt2 !== st2) hasErr2 = true;
+          if (mt2 !== null && bo2 !== null && mt2 !== bo2) hasErr2 = true;
+          if (st2 !== null && bo2 !== null && st2 !== bo2) hasErr2 = true;
+          if (hasErr2) {
             const isDom = ld['문서스캔']?.domyun_type === '도면포함' || ld['도면스캔']?.domyun_type === '전체도면';
-            const hasDomScan = '도면스캔' in ld;
-            if (isDom && !hasDomScan) {
+            if (isDom && !hasDS2) {
               // 예외: 도면 미완료
             } else {
               myunErrors++;
-              errList.push({ label:num, type:'면수 불일치', detail:myunProcs.map(p=>`${p}:${ld[p].myun||0}면`).join(', ') });
+              const parts2 = [];
+              if (mt2 !== null) parts2.push(`면표시:${mt2}면`);
+              if (ms2 !== null) parts2.push(`문서스캔:${ms2}면`);
+              if (hasDS2) parts2.push(`도면스캔:${ds2}면`);
+              if (st2 !== null) parts2.push(`스캔합계:${st2}면`);
+              if (bo2 !== null) parts2.push(`보정:${bo2}면`);
+              errList.push({ label:num, type:'면수 불일치', detail:parts2.join(', ') });
             }
           }
         }
